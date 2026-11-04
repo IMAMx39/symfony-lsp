@@ -1,0 +1,8 @@
+# Rust / Zed extension build
+/target/
+/extension.wasm
+/grammars/
+
+# Server
+/server/node_modules/
+/server/dist/

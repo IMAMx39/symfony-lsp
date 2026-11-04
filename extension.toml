@@ -1,0 +1,10 @@
+id = "symfony-zed"
+name = "Symfony"
+version = "0.0.1"
+schema_version = 1
+authors = ["Imam"]
+description = "Symfony support (templates, routes, services, translations) without PHP on the host."
+
+[language_servers.symfony-zed]
+name = "Symfony"
+languages = ["PHP", "Twig", "YAML"]
