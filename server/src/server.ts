@@ -13,6 +13,7 @@ import { DocumentTrees, languageOf } from './parsing/DocumentTrees';
 import { bundledGrammarFiles, Parsers } from './parsing/parsers';
 import { SymfonyProject } from './project/SymfonyProject';
 import { TemplateResolver } from './project/TemplateResolver';
+import { MAIN_NAMESPACE, TwigLoaderPaths } from './project/TwigLoaderPaths';
 import { isInsidePath, uriToPath } from './util/paths';
 
 const SERVER_NAME = 'symfony-zed';
@@ -24,6 +25,7 @@ interface ProjectContext {
 }
 
 interface ParsingContext {
+  parsers: Parsers;
   trees: DocumentTrees;
   templateReferences: TemplateReferenceFinder;
 }
@@ -39,7 +41,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
   workspaceDirs = collectWorkspaceDirs(params);
   try {
     const parsers = await Parsers.load(bundledGrammarFiles(__dirname));
-    parsing = { trees: new DocumentTrees(parsers), templateReferences: new TemplateReferenceFinder(parsers) };
+    parsing = { parsers, trees: new DocumentTrees(parsers), templateReferences: new TemplateReferenceFinder(parsers) };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
   }
@@ -67,8 +69,8 @@ connection.onInitialized(() => {
         connection.console.info(`[SymfonyProject] No Symfony project found in ${dir}`);
         continue;
       }
-      projects.push({ project, templates: TemplateResolver.forProject(project) });
       connection.console.info(`[SymfonyProject] Symfony project detected at ${project.root}`);
+      projects.push({ project, templates: createTemplateResolver(project) });
     }
   } catch (error) {
     connection.console.error(`[Server] Initialization failed: ${formatError(error)}`);
@@ -96,6 +98,21 @@ connection.onDefinition((params) => {
 });
 
 documents.onDidClose((event) => parsing?.trees.delete(event.document.uri));
+
+function createTemplateResolver(project: SymfonyProject): TemplateResolver {
+  if (parsing === null) {
+    return new TemplateResolver(new Map());
+  }
+  const loaderPaths = TwigLoaderPaths.build(project.root, parsing.parsers);
+  for (const warning of loaderPaths.warnings) {
+    connection.console.warn(`[TwigLoaderPaths] ${warning}`);
+  }
+  const summary = [...loaderPaths.namespaces]
+    .map(([namespace, dirs]) => `${namespace === MAIN_NAMESPACE ? '(main)' : `@${namespace}`}: ${dirs.length}`)
+    .join(', ');
+  connection.console.info(`[TwigLoaderPaths] Template namespaces: ${summary || 'none'}`);
+  return new TemplateResolver(loaderPaths.namespaces);
+}
 
 function projectFor(uri: string): ProjectContext | undefined {
   const file = uriToPath(uri);

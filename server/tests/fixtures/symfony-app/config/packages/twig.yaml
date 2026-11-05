@@ -1,0 +1,17 @@
+twig:
+    default_path: '%kernel.project_dir%/templates'
+    file_name_pattern: '*.twig'
+    paths:
+        # Main namespace: registered before default_path, so it wins.
+        'shared/templates': ~
+        '%kernel.project_dir%/lib/templates': Lib
+
+when@dev:
+    twig:
+        paths:
+            'dev/templates': Dev
+
+when@prod:
+    twig:
+        paths:
+            'prod/templates': Prod

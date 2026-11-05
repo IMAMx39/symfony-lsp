@@ -105,8 +105,9 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 | Donnée | Source |
 |---|---|
 | Racine projet | Dossier contenant `composer.json` + `bin/console` (ou `config/bundles.php`) ; le dossier de workspace d'abord, sinon un **unique** sous-dossier direct (hors `vendor/`, `var/`, `node_modules/`, `public/`) |
-| Templates | `templates/`, chemins de `twig.paths` dans `config/packages/twig.yaml`, templates des bundles (`vendor/*/*/templates/`, `vendor/*/*/src/Resources/views/`) |
-| Overrides de bundles | `templates/bundles/<NomBundle>/...` (prioritaires sur le bundle) |
+| Templates | `twig.default_path` et `twig.paths` (YAML de `config/packages/` puis `config/packages/dev/`, chacun suivi de son bloc `when@dev` ; les configs PHP ne sont pas lues), templates des bundles activés en `dev` dans `config/bundles.php`, vues de twig-bridge |
+| Classes des bundles | PSR-4 de `composer.json` et `vendor/composer/installed.json` ; racine du bundle déduite de la classe (`Bundle` → dossier de la classe, `AbstractBundle` → parent, ou `getPath()` littéral `__DIR__` / `dirname(__DIR__[, n])`) ; sinon bundle ignoré |
+| Overrides de bundles | `<default_path>/bundles/<NomBundle>/...` (prioritaires sur le bundle) |
 | Services | `var/cache/dev/App_KernelDevDebugContainer.xml` (nom à détecter par glob `*Container.xml`) |
 | Routes | Attributs `#[Route]` dans `src/Controller/**`, fichiers `config/routes/*.yaml`, et `var/cache/dev/url_generating_routes.php` si présent |
 | Traductions | `translations/*.{yaml,xlf}` (domaine et locale déduits du nom de fichier) |
@@ -114,11 +115,23 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 
 ### Résolution des noms de templates
 
-- `'home/index.html.twig'` → chaque dossier racine Twig sans namespace, dans l'ordre (`templates/` en premier).
-- `'@Foo/bar.html.twig'` → `templates/bundles/FooBundle/bar.html.twig` s'il existe, sinon dossier
-  templates du bundle `FooBundle`, sinon chemin déclaré dans `twig.paths` avec le namespace `Foo`.
-- `'@!Foo/...'` → idem sans tenir compte de l'override.
-- Si plusieurs fichiers correspondent, renvoyer le premier selon l'ordre de priorité Twig.
+Ordre vérifié dans le code de TwigBundle 7.4 (`TwigExtension::load`, `getBundleTemplatePaths`,
+`Compiler\ExtensionPass`), implémenté dans `TwigLoaderPaths`. Chaque namespace reçoit ses dossiers
+dans cet ordre, et le premier fichier existant gagne :
+1. `twig.paths`, dans l'ordre de la config (sans namespace → namespace principal).
+   **Ils passent donc avant `templates/`.**
+2. Pour chaque bundle activé, dans l'ordre de `bundles.php` : `<default_path>/bundles/<Nom>Bundle`,
+   puis `Resources/views` ou `templates` du bundle. Namespace = nom sans le suffixe `Bundle`.
+   `@!Nom` reçoit le dernier de ces dossiers (donc le bundle, sans l'override).
+3. `default_path` (par défaut `templates/`) dans le namespace principal.
+4. twig-bridge : `@email` si `symfony/mailer` est installé, form themes (`form_div_layout.html.twig`…)
+   dans le namespace principal si `symfony/form` est installé.
+
+Autres règles :
+- Un bundle dont on ne sait pas localiser les templates laisse son namespace inconnu (pas de
+  résolution partielle via le seul override).
+- Environnement reproduit : `dev`. La config est lue au démarrage du serveur (pas encore de
+  rechargement à chaud).
 - La résolution est **sensible à la casse sur toutes les plateformes** : le projet tourne dans un
   conteneur Linux, où `Home/index.html.twig` ne trouve pas `home/index.html.twig`.
 - Seules les chaînes littérales comptent : `'...'` sans `\`, ou `"..."` sans interpolation ni

@@ -5,10 +5,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { provideTemplateDefinition } from '../../../src/features/templates/definition';
 import { TemplateReferenceFinder } from '../../../src/features/templates/TemplateReferenceFinder';
 import type { Parsers } from '../../../src/parsing/parsers';
-import { SymfonyProject } from '../../../src/project/SymfonyProject';
-import { TemplateResolver } from '../../../src/project/TemplateResolver';
+import type { TemplateResolver } from '../../../src/project/TemplateResolver';
 import { isSamePath, pathToUri, uriToPath } from '../../../src/util/paths';
-import { fixtureApp, loadParsers, withCursor } from '../../helpers';
+import { fixtureApp, fixtureResolver, loadParsers, withCursor } from '../../helpers';
 
 const controllerUri = pathToUri(path.join(fixtureApp, 'src', 'Controller', 'TestController.php'));
 const template = (name: string): string => path.join(fixtureApp, 'templates', ...name.split('/'));
@@ -21,7 +20,7 @@ describe('PHP template definition', () => {
   beforeAll(async () => {
     parsers = await loadParsers();
     finder = new TemplateReferenceFinder(parsers);
-    resolver = TemplateResolver.forProject(SymfonyProject.detect(fixtureApp)!);
+    resolver = await fixtureResolver();
   });
 
   function definitionAt(source: string): string | null {
@@ -88,7 +87,7 @@ describe('PHP template definition', () => {
     ['named argument', `<?php $this->render(view: 'home/index|.html.twig');`],
     ['other attribute', `<?php class A { #[Route('home/index|.html.twig')] public function a() {} }`],
     ['cursor outside the literal', `<?php $this->render('home/index.html.twig')|;`],
-    ['namespaced name (not supported yet)', `<?php $this->render('@Foo/ba|r.html.twig');`],
+    ['unknown namespace', `<?php $this->render('@Foo/ba|r.html.twig');`],
   ])('returns nothing for %s', (_label, source) => {
     expect(definitionAt(source)).toBeNull();
   });

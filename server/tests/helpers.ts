@@ -1,6 +1,8 @@
 import * as path from 'node:path';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { Parsers } from '../src/parsing/parsers';
+import { TemplateResolver } from '../src/project/TemplateResolver';
+import { TwigLoaderPaths } from '../src/project/TwigLoaderPaths';
 
 const serverDir = path.resolve(__dirname, '..');
 
@@ -16,6 +18,11 @@ export function loadParsers(): Promise<Parsers> {
     twig: path.join(serverDir, 'node_modules', 'tree-sitter-twig', 'tree-sitter-twig.wasm'),
   });
   return parsers;
+}
+
+/** Resolver configured from the fixture project, as the server builds it. */
+export async function fixtureResolver(): Promise<TemplateResolver> {
+  return new TemplateResolver(TwigLoaderPaths.build(fixtureApp, await loadParsers()).namespaces);
 }
 
 /**

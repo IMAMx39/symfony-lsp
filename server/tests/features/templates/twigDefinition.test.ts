@@ -5,10 +5,9 @@ import { beforeAll, describe, expect, it } from 'vitest';
 import { provideTemplateDefinition } from '../../../src/features/templates/definition';
 import { TemplateReferenceFinder } from '../../../src/features/templates/TemplateReferenceFinder';
 import type { Parsers } from '../../../src/parsing/parsers';
-import { SymfonyProject } from '../../../src/project/SymfonyProject';
-import { TemplateResolver } from '../../../src/project/TemplateResolver';
+import type { TemplateResolver } from '../../../src/project/TemplateResolver';
 import { isSamePath, pathToUri, uriToPath } from '../../../src/util/paths';
-import { fixtureApp, loadParsers, withCursor } from '../../helpers';
+import { fixtureApp, fixtureResolver, loadParsers, withCursor } from '../../helpers';
 
 const twigUri = pathToUri(path.join(fixtureApp, 'templates', 'test.html.twig'));
 const template = (name: string): string => path.join(fixtureApp, 'templates', ...name.split('/'));
@@ -21,7 +20,7 @@ describe('Twig template definition', () => {
   beforeAll(async () => {
     parsers = await loadParsers();
     finder = new TemplateReferenceFinder(parsers);
-    resolver = TemplateResolver.forProject(SymfonyProject.detect(fixtureApp)!);
+    resolver = await fixtureResolver();
   });
 
   function definitionIn(document: TextDocument, offset: number): string | null {

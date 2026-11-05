@@ -1,0 +1,40 @@
+{
+    "packages": [
+        {
+            "name": "acme/foo-bundle",
+            "version": "1.0.0",
+            "type": "symfony-bundle",
+            "autoload": {
+                "psr-4": {
+                    "Acme\\FooBundle\\": "src/"
+                }
+            },
+            "install-path": "../acme/foo-bundle"
+        },
+        {
+            "name": "acme/legacy-bundle",
+            "version": "1.0.0",
+            "type": "symfony-bundle",
+            "autoload": {
+                "psr-4": {
+                    "Acme\\LegacyBundle\\": ""
+                }
+            },
+            "install-path": "../acme/legacy-bundle"
+        },
+        {
+            "name": "symfony/form",
+            "version": "v7.1.0",
+            "type": "library",
+            "install-path": "../symfony/form"
+        },
+        {
+            "name": "symfony/twig-bridge",
+            "version": "v7.1.0",
+            "type": "symfony-bridge",
+            "install-path": "../symfony/twig-bridge"
+        }
+    ],
+    "dev": true,
+    "dev-package-names": []
+}
