@@ -26,7 +26,19 @@ export class TwigLoaderPaths {
   private constructor(
     readonly namespaces: ReadonlyMap<string, readonly string[]>,
     readonly warnings: readonly string[],
+    /** False when the whole picture may be partial (unread config, no vendor/composer/installed.json). */
+    private readonly complete: boolean,
+    private readonly incompleteNamespaces: ReadonlySet<string>,
   ) {}
+
+  /**
+   * True when the directory list of `namespace` is known to be exactly Twig's,
+   * so that a template missing from it is really missing.
+   */
+  isCertain(namespace: string): boolean {
+    const base = namespace.replace(/^!/, '');
+    return this.complete && this.namespaces.has(namespace) && !this.incompleteNamespaces.has(base);
+  }
 
   static build(projectRoot: string, parsers: Parsers): TwigLoaderPaths {
     const namespaces = new Map<string, string[]>();
@@ -91,7 +103,16 @@ export class TwigLoaderPaths {
       }
     }
 
-    return new TwigLoaderPaths(namespaces, warnings);
+    if (!autoload.hasInstalledPackages) {
+      warnings.push('vendor/composer/installed.json not found: bundle templates are unknown');
+    }
+    const incompleteNamespaces = new Set([...config.incompleteNamespaces].map((namespace) => namespace ?? MAIN_NAMESPACE));
+    return new TwigLoaderPaths(
+      namespaces,
+      warnings,
+      config.complete && autoload.hasInstalledPackages,
+      incompleteNamespaces,
+    );
   }
 }
 

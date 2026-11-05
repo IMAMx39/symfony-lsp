@@ -80,7 +80,10 @@ describe('TwigLoaderPaths', () => {
       write('config/bundles.php', "<?php return [Ghost\\GhostBundle::class => ['all' => true]];");
       const { namespaces, warnings } = TwigLoaderPaths.build(tmp, parsers);
       expect([...namespaces.keys()]).toEqual([MAIN_NAMESPACE]);
-      expect(warnings).toEqual(['Cannot locate the templates of Ghost\\GhostBundle']);
+      expect(warnings).toEqual([
+        'Cannot locate the templates of Ghost\\GhostBundle',
+        'vendor/composer/installed.json not found: bundle templates are unknown',
+      ]);
     });
 
     it('reports an unparsable YAML file and keeps the defaults', () => {
@@ -88,8 +91,54 @@ describe('TwigLoaderPaths', () => {
       write('config/packages/twig.yaml', 'twig: [unclosed');
       const { namespaces, warnings } = TwigLoaderPaths.build(tmp, parsers);
       expect(namespaces.get(MAIN_NAMESPACE)).toEqual([path.join(tmp, 'templates')]);
-      expect(warnings).toHaveLength(1);
       expect(warnings[0]).toMatch(/^Cannot parse .*twig\.yaml/);
+    });
+
+    describe('isCertain', () => {
+      function installVendor(): void {
+        write('vendor/composer/installed.json', '{"packages": []}');
+      }
+
+      it('is certain for known namespaces of a fully readable project', () => {
+        installVendor();
+        write('templates/base.html.twig');
+        write('lib/x.html.twig');
+        write('config/packages/twig.yaml', "twig:\n    paths:\n        'lib': Lib\n");
+        const paths = TwigLoaderPaths.build(tmp, parsers);
+        expect(paths.isCertain(MAIN_NAMESPACE)).toBe(true);
+        expect(paths.isCertain('Lib')).toBe(true);
+        expect(paths.isCertain('Unknown')).toBe(false);
+      });
+
+      it('is never certain without vendor/composer/installed.json', () => {
+        write('templates/base.html.twig');
+        expect(TwigLoaderPaths.build(tmp, parsers).isCertain(MAIN_NAMESPACE)).toBe(false);
+      });
+
+      it('is never certain with a PHP Twig configuration', () => {
+        installVendor();
+        write('templates/base.html.twig');
+        write('config/packages/twig.php', '<?php return static function () {};');
+        expect(TwigLoaderPaths.build(tmp, parsers).isCertain(MAIN_NAMESPACE)).toBe(false);
+      });
+
+      it('is never certain with an unparsable YAML file', () => {
+        installVendor();
+        write('templates/base.html.twig');
+        write('config/packages/twig.yaml', 'twig: [unclosed');
+        expect(TwigLoaderPaths.build(tmp, parsers).isCertain(MAIN_NAMESPACE)).toBe(false);
+      });
+
+      it('is not certain for a namespace with an unresolved path, nor its @! form', () => {
+        installVendor();
+        write('templates/base.html.twig');
+        write('lib/x.html.twig');
+        write('config/packages/twig.yaml', "twig:\n    paths:\n        'lib': Lib\n        '%app.dir%/more': Lib\n");
+        const paths = TwigLoaderPaths.build(tmp, parsers);
+        expect(paths.isCertain('Lib')).toBe(false);
+        expect(paths.isCertain('!Lib')).toBe(false);
+        expect(paths.isCertain(MAIN_NAMESPACE)).toBe(true);
+      });
     });
   });
 });

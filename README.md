@@ -4,8 +4,10 @@ Extension [Zed](https://zed.dev) apportant le support de Symfony (templates, rou
 traductions) dans PHP, Twig et YAML, **sans PHP sur l'hôte** et sans démarrer le kernel.
 Pensée d'abord pour Windows, fonctionne aussi sous macOS et Linux.
 
-> Statut : squelette (phase 0). Le serveur démarre et détecte le projet Symfony, aucune
-> fonctionnalité n'est encore disponible.
+> Statut : phase 1 (templates). Navigation, complétion et diagnostic des noms de templates
+> en PHP (`render()`, `renderView()`, `renderBlock()`, `#[Template]`) et en Twig (`extends`,
+> `include`, `embed`, `import`, `from`, `use`, `include()`, `source()`), avec les namespaces
+> `@Bundle/`, `@!Bundle/` et `twig.paths`.
 
 ## Prérequis
 

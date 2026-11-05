@@ -22,17 +22,30 @@ export class TwigConfig {
     readonly paths: readonly TwigPathEntry[],
     /** Problems worth logging (unreadable files, unresolved parameters). */
     readonly warnings: readonly string[],
+    /** Namespaces (null: main) with a path that could not be resolved: their list is incomplete. */
+    readonly incompleteNamespaces: ReadonlySet<string | null>,
+    /** False when part of the configuration cannot be read (PHP config, unparsable YAML). */
+    readonly complete: boolean,
   ) {}
 
   static load(projectRoot: string, env: string): TwigConfig {
     const warnings: string[] = [];
     let defaultPath: string | null = path.join(projectRoot, 'templates');
     const paths = new Map<string, string | null>();
+    const incompleteNamespaces = new Set<string | null>();
+    let complete = true;
 
     const packagesDir = path.join(projectRoot, 'config', 'packages');
+    for (const phpConfig of [path.join(packagesDir, 'twig.php'), path.join(packagesDir, env, 'twig.php')]) {
+      if (fs.existsSync(phpConfig)) {
+        complete = false;
+        warnings.push(`${phpConfig} is not read: PHP configuration requires running PHP`);
+      }
+    }
     for (const file of [...yamlFiles(packagesDir), ...yamlFiles(path.join(packagesDir, env))]) {
       const document = parseDocument(fs.readFileSync(file, 'utf8'));
       if (document.errors.length > 0) {
+        complete = false;
         warnings.push(`Cannot parse ${file}: ${document.errors[0]?.message ?? 'unknown error'}`);
         continue;
       }
@@ -61,12 +74,13 @@ export class TwigConfig {
     for (const [rawPath, namespace] of paths) {
       const dir = resolveConfigPath(rawPath, projectRoot);
       if (dir === null) {
+        incompleteNamespaces.add(namespace);
         warnings.push(`Unresolved twig path ${rawPath}`);
         continue;
       }
       entries.push({ dir, namespace });
     }
-    return new TwigConfig(defaultPath, entries, warnings);
+    return new TwigConfig(defaultPath, entries, warnings, incompleteNamespaces, complete && defaultPath !== null);
   }
 }
 

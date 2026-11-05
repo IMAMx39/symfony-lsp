@@ -14,6 +14,8 @@ export class ComposerAutoload {
   private constructor(
     private readonly psr4: readonly Psr4Entry[],
     private readonly packages: ReadonlyMap<string, string>,
+    /** False when vendor/composer/installed.json is missing (e.g. vendor/ only exists in a container). */
+    readonly hasInstalledPackages: boolean,
   ) {}
 
   static load(projectRoot: string): ComposerAutoload {
@@ -42,7 +44,7 @@ export class ComposerAutoload {
 
     // Longest prefix first, as Composer does.
     psr4.sort((a, b) => b.prefix.length - a.prefix.length);
-    return new ComposerAutoload(psr4, packages);
+    return new ComposerAutoload(psr4, packages, installed !== undefined);
   }
 
   /** File declaring a fully qualified class name, if it exists. */

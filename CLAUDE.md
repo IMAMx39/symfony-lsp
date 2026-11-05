@@ -130,8 +130,23 @@ dans cet ordre, et le premier fichier existant gagne :
 Autres règles :
 - Un bundle dont on ne sait pas localiser les templates laisse son namespace inconnu (pas de
   résolution partielle via le seul override).
-- Environnement reproduit : `dev`. La config est lue au démarrage du serveur (pas encore de
-  rechargement à chaud).
+- Environnement reproduit : `dev`. La config est relue quand `config/packages/**`,
+  `config/bundles.php`, `composer.json` ou `vendor/composer/installed.json` change (watchers LSP).
+
+### Complétion et diagnostics de templates
+
+- `TemplateIndex` liste les `.twig` de chaque namespace (premier dossier gagnant, comme Twig).
+  Les sous-dossiers enregistrés pour un autre namespace (overrides `templates/bundles/…`) ne sont
+  pas listés sous le namespace parent. Un `.twig` créé/supprimé ne rescanne que les namespaces
+  concernés.
+- Complétion : curseur entre les guillemets d'un littéral en position de template ; remplace tout
+  le contenu du littéral. Les noms `@!Ns/` ne sont proposés qu'une fois `@!` tapé.
+- Diagnostic « template introuvable » (Warning, code `template-not-found`) seulement si :
+  le nom finit par `.twig` ; pas de `ignore missing` (tag) ni d'argument `ignore_missing`
+  (`include()`, `source()`) ; pour un tableau, aucun élément n'existe et tous sont littéraux ;
+  `TwigLoaderPaths.isCertain(namespace)`, faux si une config Twig PHP existe, si un YAML est
+  illisible, si `vendor/composer/installed.json` manque, ou si un chemin du namespace contient un
+  paramètre non résolu.
 - La résolution est **sensible à la casse sur toutes les plateformes** : le projet tourne dans un
   conteneur Linux, où `Home/index.html.twig` ne trouve pas `home/index.html.twig`.
 - Seules les chaînes littérales comptent : `'...'` sans `\`, ou `"..."` sans interpolation ni
@@ -153,8 +168,8 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Definition Twig : `{% extends %}`, `{% include %}`, `{% embed %}`, `{% import %}`, `{% from %}`, `{% use %}`, `{{ include() }}`, `{{ source() }}`
       (y compris chaque littéral d'un tableau ou d'un ternaire)
 - [x] Support des namespaces `@Bundle/` et `twig.paths`
-- [ ] Completion des noms de templates dans ces mêmes positions
-- [ ] Diagnostic : template introuvable (uniquement sur chaîne littérale)
+- [x] Completion des noms de templates dans ces mêmes positions
+- [x] Diagnostic : template introuvable (uniquement sur chaîne littérale)
 
 ### Phase 2 : routes
 - [ ] Definition + completion : `path()`, `url()` (Twig), `redirectToRoute()`, `generateUrl()` (PHP)
