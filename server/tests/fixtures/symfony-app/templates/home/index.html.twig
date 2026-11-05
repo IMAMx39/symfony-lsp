@@ -2,4 +2,6 @@
 
 {% block body %}
     <h1>Home</h1>
+    <a href="{{ path('blog_index') }}">Blog</a>
+    <a href="{{ path('blog_show', {slug: 'hello-world'}) }}">First post</a>
 {% endblock %}

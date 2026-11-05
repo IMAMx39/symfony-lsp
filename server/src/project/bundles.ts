@@ -2,6 +2,7 @@ import * as path from 'node:path';
 import type { Node } from 'web-tree-sitter';
 import { phpStringLiteralValue } from '../parsing/literals';
 import type { Parsers } from '../parsing/parsers';
+import { resolveClassName } from '../parsing/phpNames';
 
 const BUNDLE_CLASS = 'Symfony\\Component\\HttpKernel\\Bundle\\Bundle';
 const ABSTRACT_BUNDLE_CLASS = 'Symfony\\Component\\HttpKernel\\Bundle\\AbstractBundle';
@@ -129,26 +130,6 @@ function dirLevelsReturned(body: Node): number | null {
   }
   const levels = args[1]?.type === 'integer' ? Number(args[1].text) : NaN;
   return Number.isInteger(levels) && levels >= 1 ? levels : null;
-}
-
-/** Resolves a class name against the file's namespace and `use` imports. */
-function resolveClassName(name: string, root: Node): string {
-  if (name.startsWith('\\')) {
-    return name.slice(1);
-  }
-  const [first, ...rest] = name.split('\\');
-  for (const clause of root.descendantsOfType('namespace_use_clause')) {
-    const imported = clause?.namedChildren[0]?.text.replace(/^\\/, '');
-    if (!clause || !imported) {
-      continue;
-    }
-    const alias = clause.childForFieldName('alias')?.text ?? imported.split('\\').pop();
-    if (alias === first) {
-      return [imported, ...rest].join('\\');
-    }
-  }
-  const namespace = root.descendantsOfType('namespace_definition')[0]?.childForFieldName('name')?.text;
-  return namespace ? `${namespace}\\${name}` : name;
 }
 
 function ancestor(dir: string, levels: number): string {

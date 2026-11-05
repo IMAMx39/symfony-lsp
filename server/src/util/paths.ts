@@ -25,6 +25,11 @@ export function isInsidePath(child: string, parent: string): boolean {
   return relative === '' || (relative.split(path.sep)[0] !== '..' && !path.isAbsolute(relative));
 }
 
+/** Key identifying a file in maps: resolved, and lower-cased on Windows. */
+export function pathKey(fsPath: string): string {
+  return comparable(fsPath);
+}
+
 function comparable(fsPath: string): string {
   const resolved = path.resolve(fsPath);
   return isWindows ? resolved.toLowerCase() : resolved;

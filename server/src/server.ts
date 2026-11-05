@@ -8,16 +8,20 @@ import {
   type InitializeResult,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { provideRouteNameCompletion } from './features/routes/completion';
+import { provideRouteDefinition } from './features/routes/definition';
+import { RouteReferenceFinder, type RouteReference } from './features/routes/RouteReferenceFinder';
 import { provideTemplateCompletion } from './features/templates/completion';
 import { provideTemplateDefinition } from './features/templates/definition';
 import { provideTemplateDiagnostics } from './features/templates/diagnostics';
 import { TemplateReferenceFinder, type TemplateReference } from './features/templates/TemplateReferenceFinder';
+import { RouteIndex, routeFileKind } from './index/RouteIndex';
 import { DocumentTrees, languageOf } from './parsing/DocumentTrees';
 import { bundledGrammarFiles, Parsers } from './parsing/parsers';
 import { ProjectTemplates } from './project/ProjectTemplates';
 import { SymfonyProject } from './project/SymfonyProject';
 import { MAIN_NAMESPACE } from './project/TwigLoaderPaths';
-import { isInsidePath, uriToPath } from './util/paths';
+import { isInsidePath, pathKey, uriToPath } from './util/paths';
 
 const SERVER_NAME = 'symfony-zed';
 const SERVER_VERSION = '0.0.1';
@@ -27,19 +31,22 @@ const RELOAD_DELAY_MS = 300;
 interface ProjectContext {
   project: SymfonyProject;
   templates: ProjectTemplates;
-  reloadTimer?: NodeJS.Timeout;
+  routes: RouteIndex;
+  reloadTimers: Map<string, NodeJS.Timeout>;
 }
 
 interface ParsingContext {
   parsers: Parsers;
   trees: DocumentTrees;
   templateReferences: TemplateReferenceFinder;
+  routeReferences: RouteReferenceFinder;
 }
 
 interface AnalyzedDocument {
   document: TextDocument;
   context: ProjectContext;
-  references: TemplateReference[];
+  templates: TemplateReference[];
+  routes: RouteReference[];
 }
 
 const connection = createConnection(ProposedFeatures.all);
@@ -56,7 +63,12 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
   canWatchFiles = params.capabilities.workspace?.didChangeWatchedFiles?.dynamicRegistration === true;
   try {
     const parsers = await Parsers.load(bundledGrammarFiles(__dirname));
-    parsing = { parsers, trees: new DocumentTrees(parsers), templateReferences: new TemplateReferenceFinder(parsers) };
+    parsing = {
+      parsers,
+      trees: new DocumentTrees(parsers),
+      templateReferences: new TemplateReferenceFinder(parsers),
+      routeReferences: new RouteReferenceFinder(parsers),
+    };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
   }
@@ -83,8 +95,9 @@ connection.onInitialized(() => {
       }
       connection.console.info(`[SymfonyProject] Symfony project detected at ${project.root}`);
       const templates = buildTemplates(project);
-      if (templates !== null) {
-        projects.push({ project, templates });
+      const routes = buildRoutes(project);
+      if (templates !== null && routes !== null) {
+        projects.push({ project, templates, routes, reloadTimers: new Map() });
       }
     }
     if (projects.length > 0) {
@@ -99,7 +112,14 @@ connection.onInitialized(() => {
 connection.onDefinition((params) => {
   try {
     const analyzed = analyze(params.textDocument.uri);
-    return analyzed && provideTemplateDefinition(analyzed.document, params.position, analyzed.references, analyzed.context.templates.resolver);
+    if (!analyzed) {
+      return null;
+    }
+    const { document, context } = analyzed;
+    return (
+      provideTemplateDefinition(document, params.position, analyzed.templates, context.templates.resolver) ??
+      provideRouteDefinition(document, params.position, analyzed.routes, context.routes)
+    );
   } catch (error) {
     connection.console.error(`[Definition] ${formatError(error)}`);
     return null;
@@ -112,8 +132,11 @@ connection.onCompletion((params) => {
     if (!analyzed) {
       return null;
     }
-    const { document, references, context } = analyzed;
-    return provideTemplateCompletion(document, params.position, references, context.templates.index.templates(), context.project.root);
+    const { document, context } = analyzed;
+    return (
+      provideTemplateCompletion(document, params.position, analyzed.templates, context.templates.index.templates(), context.project.root) ??
+      provideRouteNameCompletion(document, params.position, analyzed.routes, context.routes.visibleRoutes())
+    );
   } catch (error) {
     connection.console.error(`[Completion] ${formatError(error)}`);
     return null;
@@ -130,12 +153,35 @@ connection.onDidChangeWatchedFiles((params) => {
         continue;
       }
       if (ProjectTemplates.isConfigFile(file, context.project.root)) {
-        scheduleReload(context);
+        scheduleReload(context, 'templates', () => {
+          const templates = buildTemplates(context.project);
+          if (templates !== null) {
+            context.templates = templates;
+          }
+        });
       } else if (file.endsWith('.twig') && context.templates.index.refresh(file)) {
         touched.add(context);
       }
+
+      switch (routeFileKind(file, context.project.root)) {
+        case 'routing-config':
+          scheduleReload(context, 'routing-config', () => context.routes.reloadYaml());
+          break;
+        case 'compiled':
+          scheduleReload(context, 'compiled-routes', () => context.routes.reloadCompiled());
+          break;
+        case 'autoload':
+          scheduleReload(context, 'autoload', () => context.routes.reloadAutoload());
+          break;
+        case 'source':
+          // An open document is the source of truth for its file.
+          if (!openDocumentFor(file) && context.routes.updatePhpFile(file, null)) {
+            touched.add(context);
+          }
+          break;
+      }
     }
-    touched.forEach(revalidateProject);
+    touched.forEach((context) => revalidateProject(context));
   } catch (error) {
     connection.console.error(`[WatchedFiles] ${formatError(error)}`);
   }
@@ -149,6 +195,11 @@ documents.onDidClose((event) => {
   diagnosticTimers.delete(uri);
   parsing?.trees.delete(uri);
   void connection.sendDiagnostics({ uri, diagnostics: [] });
+  // Back to the file on disk (unsaved changes are discarded).
+  const context = projectFor(uri);
+  if (context?.routes.updatePhpFile(uriToPath(uri), null)) {
+    revalidateProject(context);
+  }
 });
 
 function analyze(uri: string): AnalyzedDocument | null {
@@ -162,7 +213,12 @@ function analyze(uri: string): AnalyzedDocument | null {
   if (tree === null) {
     return null;
   }
-  return { document, context, references: parsing.templateReferences.find(language, tree.rootNode) };
+  return {
+    document,
+    context,
+    templates: parsing.templateReferences.find(language, tree.rootNode),
+    routes: parsing.routeReferences.find(language, tree.rootNode),
+  };
 }
 
 function scheduleDiagnostics(document: TextDocument): void {
@@ -172,46 +228,60 @@ function scheduleDiagnostics(document: TextDocument): void {
     uri,
     setTimeout(() => {
       diagnosticTimers.delete(uri);
-      publishDiagnostics(uri);
+      refreshDocument(uri);
     }, DIAGNOSTICS_DELAY_MS),
   );
 }
 
-function publishDiagnostics(uri: string): void {
+/** Updates the indexes from an open document, then publishes its diagnostics. */
+function refreshDocument(uri: string): void {
   try {
-    const analyzed = analyze(uri);
-    if (!analyzed) {
+    const document = documents.get(uri);
+    const context = document && projectFor(uri);
+    if (!document || !context) {
       return;
     }
-    const { document, references, context } = analyzed;
-    const { resolver, loaderPaths } = context.templates;
-    const diagnostics = provideTemplateDiagnostics(document, references, resolver, (namespace) => loaderPaths.isCertain(namespace));
-    void connection.sendDiagnostics({ uri, version: document.version, diagnostics });
+    if (languageOf(uri) === 'php' && context.routes.updatePhpFile(uriToPath(uri), document.getText())) {
+      revalidateProject(context, uri);
+    }
+    publishDiagnostics(uri);
   } catch (error) {
     connection.console.error(`[Diagnostics] ${formatError(error)}`);
   }
 }
 
-function scheduleReload(context: ProjectContext): void {
-  clearTimeout(context.reloadTimer);
-  context.reloadTimer = setTimeout(() => {
-    try {
-      connection.console.info(`[ProjectTemplates] Configuration changed, reloading ${context.project.root}`);
-      const templates = buildTemplates(context.project);
-      if (templates !== null) {
-        context.templates = templates;
-        revalidateProject(context);
-      }
-    } catch (error) {
-      connection.console.error(`[ProjectTemplates] Reload failed: ${formatError(error)}`);
-    }
-  }, RELOAD_DELAY_MS);
+function publishDiagnostics(uri: string): void {
+  const analyzed = analyze(uri);
+  if (!analyzed) {
+    return;
+  }
+  const { document, context } = analyzed;
+  const { resolver, loaderPaths } = context.templates;
+  const diagnostics = provideTemplateDiagnostics(document, analyzed.templates, resolver, (namespace) => loaderPaths.isCertain(namespace));
+  void connection.sendDiagnostics({ uri, version: document.version, diagnostics });
 }
 
-function revalidateProject(context: ProjectContext): void {
+function scheduleReload(context: ProjectContext, key: string, reload: () => void): void {
+  clearTimeout(context.reloadTimers.get(key));
+  context.reloadTimers.set(
+    key,
+    setTimeout(() => {
+      context.reloadTimers.delete(key);
+      try {
+        connection.console.info(`[Server] ${key} changed, reloading ${context.project.root}`);
+        reload();
+        revalidateProject(context);
+      } catch (error) {
+        connection.console.error(`[Server] Reload of ${key} failed: ${formatError(error)}`);
+      }
+    }, RELOAD_DELAY_MS),
+  );
+}
+
+function revalidateProject(context: ProjectContext, exceptUri?: string): void {
   documents
     .all()
-    .filter((document) => projectFor(document.uri) === context)
+    .filter((document) => document.uri !== exceptUri && projectFor(document.uri) === context)
     .forEach(scheduleDiagnostics);
 }
 
@@ -232,9 +302,21 @@ function buildTemplates(project: SymfonyProject): ProjectTemplates | null {
   return templates;
 }
 
+function buildRoutes(project: SymfonyProject): RouteIndex | null {
+  if (parsing === null) {
+    return null;
+  }
+  const routes = new RouteIndex(project.root, parsing.parsers);
+  connection.console.info(
+    `[RouteIndex] ${routes.visibleRoutes().length} routes indexed` +
+      (routes.isCertain() ? '' : ' (incomplete: unknown routes are not reported)'),
+  );
+  return routes;
+}
+
 function registerFileWatchers(): void {
   if (!canWatchFiles) {
-    connection.console.warn('[Server] Client cannot watch files: restart the server after adding templates');
+    connection.console.warn('[Server] Client cannot watch files: restart the server after adding templates or routes');
     return;
   }
   const globs = [
@@ -243,12 +325,25 @@ function registerFileWatchers(): void {
     '**/config/packages/**/*.yml',
     '**/config/packages/**/*.php',
     '**/config/bundles.php',
+    '**/config/routes.yaml',
+    '**/config/routes.php',
+    '**/config/routes/**/*.yaml',
+    '**/config/routes/**/*.yml',
+    '**/config/routes/**/*.php',
+    '**/src/**/*.php',
+    '**/var/cache/dev/url_generating_routes.php',
+    '**/var/cache/dev/url_matching_routes.php',
     '**/composer.json',
     '**/vendor/composer/installed.json',
   ];
   connection.client
     .register(DidChangeWatchedFilesNotification.type, { watchers: globs.map((globPattern) => ({ globPattern })) })
     .catch((error: unknown) => connection.console.error(`[Server] File watcher registration failed: ${formatError(error)}`));
+}
+
+function openDocumentFor(file: string): TextDocument | undefined {
+  const key = pathKey(file);
+  return documents.all().find((document) => pathKey(uriToPath(document.uri)) === key);
 }
 
 function projectFor(uri: string): ProjectContext | undefined {

@@ -152,6 +152,27 @@ Autres règles :
 - Seules les chaînes littérales comptent : `'...'` sans `\`, ou `"..."` sans interpolation ni
   échappement. Concaténation, variable ou argument nommé : aucune réponse.
 
+### Routes
+
+`RouteIndex` fusionne, de la priorité la plus basse à la plus haute :
+1. le cache `var/cache/dev/url_generating_routes.php` (noms, chemins, `_controller`, alias compris)
+   et `url_matching_routes.php` (méthodes HTTP) : seule source des routes de bundles et des loaders
+   de service (`routing.controllers`, `security.route_loader.logout`), mais potentiellement périmé ;
+2. les routes YAML de `config/routes/dev/*.yaml`, `config/routes/*.yaml`, `config/routes.yaml`
+   (+ `when@dev`), alias `name: { alias: x }` compris ;
+3. les `#[Route]` de `src/**/*.php`, avec `prefix` / `name_prefix` de l'import YAML de dossier qui
+   couvre le fichier. Un document ouvert remplace le contenu disque de son fichier.
+
+Règles du loader reproduites (vérifiées dans `AttributeClassLoader` et
+`AttributeRouteControllerLoader` 7.4) : préfixes de nom/chemin et `methods` du `#[Route]` de classe,
+`env`, plusieurs routes par méthode, nom par défaut (`app_blog_feed` pour
+`App\Controller\BlogController::feedAction`, suffixe `_1`, `_2`…), classe invokable sans route de
+méthode, alias `Classe::méthode` / FQCN. Les alias sont résolus mais pas proposés en complétion.
+
+Positions reconnues : premier argument littéral de `path()`, `url()` (Twig), `->redirectToRoute()`,
+`->generateUrl()` (PHP). Pas `->generate()` (trop générique). Définition : attribut ou clé YAML,
+sinon méthode du contrôleur via PSR-4 (contrôleur en id de service : rien avant la phase 3).
+
 ---
 
 ## Roadmap
@@ -172,7 +193,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Diagnostic : template introuvable (uniquement sur chaîne littérale)
 
 ### Phase 2 : routes
-- [ ] Definition + completion : `path()`, `url()` (Twig), `redirectToRoute()`, `generateUrl()` (PHP)
+- [x] Definition + completion : `path()`, `url()` (Twig), `redirectToRoute()`, `generateUrl()` (PHP)
 - [ ] Hover : chemin, méthodes HTTP, contrôleur
 - [ ] Completion des paramètres de route
 - [ ] Diagnostic : route inconnue

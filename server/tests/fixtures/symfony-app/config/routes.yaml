@@ -1,0 +1,24 @@
+controllers:
+    resource:
+        path: ../src/Controller/
+        namespace: App\Controller
+    type: attribute
+
+admin_controllers:
+    resource: ../src/Admin/Controller/
+    type: attribute
+    prefix: /admin
+    name_prefix: admin_
+
+legacy_contact:
+    path: /contact
+    controller: App\Controller\HomeController::index
+    methods: GET|POST
+
+contact:
+    alias: legacy_contact
+
+when@dev:
+    dev_tools:
+        path: /_dev/tools/{tool}
+        controller: App\Controller\HomeController::index
