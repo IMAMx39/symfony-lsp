@@ -46,7 +46,7 @@ export function parseContainerXml(source: string): DumpedContainer | null {
       attributeNamePrefix: ATTRIBUTE_PREFIX,
       parseTagValue: false,
       textNodeName: TEXT_KEY,
-      isArray: (tagName) => tagName === 'service' || tagName === 'parameter',
+      isArray: (tagName) => tagName === 'service' || tagName === 'parameter' || tagName === 'tag',
     }).parse(source);
   } catch {
     return null;
@@ -66,6 +66,7 @@ export function parseContainerXml(source: string): DumpedContainer | null {
       id,
       class: alias === null ? (attribute(element, 'class')?.replace(/^\\/, '') ?? null) : null,
       alias,
+      tags: tagNames(element),
       location: null,
     });
   }
@@ -83,6 +84,23 @@ function children(container: unknown, group: string, tag: string): unknown[] {
   const parent = isRecord(container) ? container[group] : undefined;
   const elements = isRecord(parent) ? parent[tag] : undefined;
   return Array.isArray(elements) ? elements : [];
+}
+
+/**
+ * Names of the `<tag>` children of a service. XmlDumper writes the name as text instead of
+ * the `name` attribute when the tag has its own `name` attribute.
+ */
+function tagNames(service: unknown): string[] {
+  const tags = isRecord(service) ? service['tag'] : undefined;
+  const names = new Set<string>();
+  for (const tag of Array.isArray(tags) ? tags : []) {
+    const text = typeof tag === 'string' ? tag : isRecord(tag) ? tag[TEXT_KEY] : undefined;
+    const name = typeof text === 'string' && text.trim() !== '' ? text.trim() : attribute(tag, 'name');
+    if (name !== null) {
+      names.add(name);
+    }
+  }
+  return [...names];
 }
 
 /** Text of a scalar parameter (`<parameter key="x">text</parameter>`), null for a collection. */

@@ -208,6 +208,9 @@ Références reconnues : littéraux quotés `'@id'`, `'@?id'`, `'@!id'` (sans é
 Exclus : `@@` (échappement), `@=` (expression), tags, `parameters:`, autres `when@`.
 Complétion : ids sans ceux commençant par `.` (comme `debug:container`), remplace l'id en gardant
 le préfixe. Définition : clé YAML de la déclaration, sinon classe via PSR-4 en suivant les alias.
+Survol (mêmes positions, YAML et `#[Autowire]`) : cible finale de la chaîne d'alias, sa classe,
+ses tags (union du container, autoconfiguration comprise, et du YAML ; un `<tag>` dont le nom est
+en texte compte aussi), ses autres alias directs visibles, et l'emplacement de la déclaration.
 
 Paramètres : `<parameters>` du container (valeur résolue, collections sans valeur) et clés de
 `parameters:` des mêmes YAML (emplacement de la déclaration). Ceux commençant par `.` ne sont pas

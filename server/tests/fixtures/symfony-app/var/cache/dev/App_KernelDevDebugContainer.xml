@@ -31,6 +31,9 @@
         <service class="App\Service\InlineHelper"/>
       </argument>
       <tag name="app.tag" ref="@app.mailer"/>
+      <tag name="kernel.event_listener" event="kernel.request"/>
+      <tag name="kernel.event_listener" event="kernel.response"/>
+      <tag name="custom">app.named_tag</tag>
     </service>
     <service id="app.child_mailer" class="App\Service\Newsletter" autowire="true" autoconfigure="true"/>
     <service id="logger" class="\Symfony\Component\HttpKernel\Log\Logger">

@@ -33,6 +33,22 @@ describe('parseServicesYaml', () => {
     expect(byId.get('app.mailer_short')).toMatchObject({ class: null, alias: 'app.mailer' });
   });
 
+  it('reads tag names in their three forms', () => {
+    const source = [
+      'services:',
+      '    foo:',
+      '        tags:',
+      '            - plain.tag',
+      "            - { name: 'named.tag', priority: 10 }",
+      '            - keyed.tag: { priority: 5 }',
+      '            - plain.tag',
+      '    bar: ~',
+    ].join('\n');
+    const parsed = parseServicesYaml(source, servicesFile, 'dev')!.services;
+    expect(parsed.map((service) => service.tags)).toEqual([['plain.tag', 'named.tag', 'keyed.tag'], []]);
+    expect(byId.get('app.newsletter')?.tags).toEqual(['app.tag']);
+  });
+
   it('leaves the class of a child definition unknown', () => {
     expect(byId.get('app.child_mailer')).toMatchObject({ class: null, alias: null });
   });

@@ -111,25 +111,53 @@ function parameterValue(value: unknown): string | null {
   return value.value === null ? 'null' : String(value.value);
 }
 
-function readDefinition(id: string, value: unknown): Pick<ServiceInfo, 'class' | 'alias'> | null {
+function readDefinition(id: string, value: unknown): Pick<ServiceInfo, 'class' | 'alias' | 'tags'> | null {
   const implicitClass = NAMESPACED_CLASS.test(id) ? id : null;
   if (value === null || (isScalar(value) && value.value === null)) {
-    return { class: implicitClass, alias: null };
+    return { class: implicitClass, alias: null, tags: [] };
   }
   if (isScalar(value)) {
     // Short alias syntax: `foo: '@bar'`.
-    return typeof value.value === 'string' && value.value.startsWith('@') ? { class: null, alias: value.value.slice(1) } : null;
+    return typeof value.value === 'string' && value.value.startsWith('@')
+      ? { class: null, alias: value.value.slice(1), tags: [] }
+      : null;
   }
   if (!isMap(value) || value.has('resource')) {
     return null;
   }
   if (value.has('alias')) {
     const alias = scalarString(value.get('alias', true));
-    return alias === null ? null : { class: null, alias };
+    return alias === null ? null : { class: null, alias, tags: [] };
   }
   const explicitClass = scalarString(value.get('class', true))?.replace(/^\\/, '') ?? null;
-  // A child definition inherits the class of its parent: unknown from the YAML alone.
-  return { class: explicitClass ?? (value.has('parent') ? null : implicitClass), alias: null };
+  return {
+    // A child definition inherits the class of its parent: unknown from the YAML alone.
+    class: explicitClass ?? (value.has('parent') ? null : implicitClass),
+    alias: null,
+    tags: tagNames(value.get('tags', true)),
+  };
+}
+
+/** `tags: [name, { name: x, ... }, { x: { ... } }]` (the forms YamlFileLoader accepts). */
+function tagNames(tags: unknown): string[] {
+  const names = new Set<string>();
+  for (const tag of isSeq(tags) ? tags.items : []) {
+    if (isMap(tag)) {
+      const name = scalarString(tag.get('name', true));
+      const [single] = tag.items;
+      const key = tag.items.length === 1 && single && isMap(single.value) ? scalarString(single.key) : null;
+      const found = name ?? key;
+      if (found !== null) {
+        names.add(found);
+      }
+    } else {
+      const name = scalarString(tag);
+      if (name !== null) {
+        names.add(name);
+      }
+    }
+  }
+  return [...names];
 }
 
 function scanDefinition(definition: unknown, collect: (node: unknown) => void): void {

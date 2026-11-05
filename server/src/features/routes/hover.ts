@@ -1,9 +1,8 @@
-import * as path from 'node:path';
 import { MarkupKind, Range, type Hover, type Position } from 'vscode-languageserver';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { RouteIndex } from '../../index/RouteIndex';
 import { displayPath } from '../../routing/routePath';
-import { isInsidePath, uriToPath } from '../../util/paths';
+import { displayFilePath, uriToPath } from '../../util/paths';
 import { findRouteReferenceAt } from './definition';
 import type { RouteReference } from './RouteReferenceFinder';
 
@@ -36,9 +35,7 @@ export function provideRouteHover(
   }
   const location = index.locationOf(route);
   if (location) {
-    const file = uriToPath(location.uri);
-    const shown = isInsidePath(file, projectRoot) ? path.relative(projectRoot, file).split(path.sep).join('/') : file;
-    sections.push(`Defined in \`${shown}:${location.range.start.line + 1}\``);
+    sections.push(`Defined in \`${displayFilePath(uriToPath(location.uri), projectRoot)}:${location.range.start.line + 1}\``);
   }
 
   return {

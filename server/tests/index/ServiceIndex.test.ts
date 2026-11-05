@@ -47,6 +47,15 @@ describe('ServiceIndex', () => {
     expect(index.getParameter('.kernel.bundles_definition')).toBeDefined();
   });
 
+  it('merges compiled and YAML tags, resolves alias chains and lists aliases', () => {
+    const local = new ServiceIndex(fixtureApp, parsers);
+    local.updateYamlFile(fixture('config', 'services.yaml'), 'services:\n    app.newsletter:\n        class: App\\Service\\Newsletter\n        tags: [app.new_tag, app.tag]\n');
+    expect(local.get('app.newsletter')?.tags).toEqual(['app.tag', 'kernel.event_listener', 'app.named_tag', 'app.new_tag']);
+    expect(index.resolve(index.get('app.mailer_short')!)?.id).toBe('App\\Service\\Mailer');
+    expect(index.resolve(index.get('logger')!)?.id).toBe('logger');
+    expect(index.aliasesOf('logger').map((service) => service.id)).toEqual(['Psr\\Log\\LoggerInterface']);
+  });
+
   it('takes the class of a child definition from the container', () => {
     expect(index.get('app.child_mailer')?.class).toBe('App\\Service\\Newsletter');
   });

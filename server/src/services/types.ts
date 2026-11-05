@@ -6,6 +6,8 @@ export interface ServiceInfo {
   class: string | null;
   /** Target id when the service is an alias. */
   alias: string | null;
+  /** Tag names, without duplicates (a tag can be applied several times). */
+  tags: readonly string[];
   /** Where the service is declared (YAML key), null when only known from the container. */
   location: Location | null;
 }

@@ -34,3 +34,8 @@ function comparable(fsPath: string): string {
   const resolved = path.resolve(fsPath);
   return isWindows ? resolved.toLowerCase() : resolved;
 }
+
+/** Path shown to the user: relative to the project (with `/`) when inside it, else absolute. */
+export function displayFilePath(file: string, projectRoot: string): string {
+  return isInsidePath(file, projectRoot) ? path.relative(projectRoot, file).split(path.sep).join('/') : file;
+}

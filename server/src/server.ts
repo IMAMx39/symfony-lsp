@@ -17,6 +17,7 @@ import { RouteReferenceFinder, type RouteReference } from './features/routes/Rou
 import { AutowireReferenceFinder, type AutowireReferences } from './features/services/AutowireReferenceFinder';
 import { provideParameterCompletion, provideServiceCompletion } from './features/services/completion';
 import { provideParameterDefinition, provideServiceDefinition } from './features/services/definition';
+import { provideServiceHover } from './features/services/hover';
 import { provideTemplateCompletion } from './features/templates/completion';
 import { provideTemplateDefinition } from './features/templates/definition';
 import { provideTemplateDiagnostics } from './features/templates/diagnostics';
@@ -156,8 +157,20 @@ connection.onDefinition((params) => {
 
 connection.onHover((params) => {
   try {
+    const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
+    if (servicesYaml) {
+      const { document, context, references } = servicesYaml;
+      return provideServiceHover(document, params.position, references, context.services, context.project.root);
+    }
     const analyzed = analyze(params.textDocument.uri);
-    return analyzed && provideRouteHover(analyzed.document, params.position, analyzed.routes, analyzed.context.routes, analyzed.context.project.root);
+    if (!analyzed) {
+      return null;
+    }
+    const { document, context } = analyzed;
+    return (
+      provideRouteHover(document, params.position, analyzed.routes, context.routes, context.project.root) ??
+      provideServiceHover(document, params.position, analyzed.autowire.services, context.services, context.project.root)
+    );
   } catch (error) {
     connection.console.error(`[Hover] ${formatError(error)}`);
     return null;

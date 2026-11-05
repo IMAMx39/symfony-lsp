@@ -77,6 +77,23 @@ export class ServiceIndex {
     return this.container !== null;
   }
 
+  /** Service an alias chain ends on (the service itself when it is not an alias). */
+  resolve(service: ServiceInfo): ServiceInfo | undefined {
+    let current: ServiceInfo | undefined = service;
+    for (let depth = 0; current !== undefined && depth < MAX_ALIAS_DEPTH; depth++) {
+      if (current.alias === null) {
+        return current;
+      }
+      current = this.get(current.alias);
+    }
+    return undefined;
+  }
+
+  /** Visible aliases pointing directly to a service id. */
+  aliasesOf(id: string): ServiceInfo[] {
+    return this.visibleServices().filter((service) => service.alias === id);
+  }
+
   /** Declaration of the service (YAML key), else the class it resolves to, following aliases. */
   locationOf(service: ServiceInfo): Location | null {
     let current: ServiceInfo | undefined = service;
@@ -153,6 +170,8 @@ export class ServiceIndex {
           ...service,
           // A child definition (`parent:`) only gets its class from the compiled container.
           class: service.alias === null ? (service.class ?? compiled?.class ?? null) : null,
+          // Compiled tags include autoconfigured ones; YAML ones may be newer than the dump.
+          tags: service.alias === null ? [...new Set([...(compiled?.tags ?? []), ...service.tags])] : [],
         });
       }
     }

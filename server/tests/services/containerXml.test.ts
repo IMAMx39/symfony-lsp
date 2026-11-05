@@ -14,7 +14,7 @@ describe('parseContainerXml', () => {
   const byName = new Map(parameters.map((parameter) => [parameter.name, parameter]));
 
   it('reads the top-level services with their class', () => {
-    expect(byId.get('App\\Service\\Mailer')).toEqual({ id: 'App\\Service\\Mailer', class: 'App\\Service\\Mailer', alias: null, location: null });
+    expect(byId.get('App\\Service\\Mailer')).toEqual({ id: 'App\\Service\\Mailer', class: 'App\\Service\\Mailer', alias: null, tags: [], location: null });
     expect(byId.get('mailer.transport')?.class).toBe('Acme\\FooBundle\\Mailer\\Transport');
   });
 
@@ -23,7 +23,12 @@ describe('parseContainerXml', () => {
   });
 
   it('reads aliases', () => {
-    expect(byId.get('Psr\\Log\\LoggerInterface')).toEqual({ id: 'Psr\\Log\\LoggerInterface', class: null, alias: 'logger', location: null });
+    expect(byId.get('Psr\\Log\\LoggerInterface')).toEqual({ id: 'Psr\\Log\\LoggerInterface', class: null, alias: 'logger', tags: [], location: null });
+  });
+
+  it('reads tag names once each, including names written as text', () => {
+    expect(byId.get('app.newsletter')?.tags).toEqual(['app.tag', 'kernel.event_listener', 'app.named_tag']);
+    expect(byId.get('logger')?.tags).toEqual(['kernel.reset']);
   });
 
   it('skips inline services nested in arguments', () => {
@@ -45,7 +50,7 @@ describe('parseContainerXml', () => {
 
   it('handles a container with a single service or none', () => {
     expect(parseContainerXml('<container><services><service id="a" class="A\\B"/></services></container>')).toEqual({
-      services: [{ id: 'a', class: 'A\\B', alias: null, location: null }],
+      services: [{ id: 'a', class: 'A\\B', alias: null, tags: [], location: null }],
       parameters: [],
     });
     expect(parseContainerXml('<container><services/></container>')).toEqual({ services: [], parameters: [] });
