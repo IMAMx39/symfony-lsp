@@ -229,12 +229,15 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 
 - Déclarer le serveur pour les langages `PHP`, `Twig` et `YAML` dans `extension.toml`.
   Le langage Twig nécessite l'extension Twig communautaire de Zed : le documenter dans le README.
-- Résolution du binaire, dans l'ordre :
-  1. Override utilisateur via `lsp.symfony-zed.binary.path` / `arguments` (lu avec `LspSettings::for_worktree`).
-     C'est le mode dev : pointer vers `<repo>/server/dist/server.js`.
+- Résolution du serveur, dans l'ordre :
+  1. Mode dev : `lsp.symfony-zed.settings.server_path` (lu avec `LspSettings::for_worktree`),
+     chemin absolu de `<repo>/server/dist/server.js`, lancé avec le Node de Zed.
+     **Ne pas utiliser `lsp.symfony-zed.binary.path`** : quand il est défini, Zed court-circuite
+     l'extension et exécute ce chemin lui-même comme exécutable (constaté : `os error 193` sous
+     Windows avec un `.js`). `binary` reste l'override complet de Zed (ex. `node.exe` + arguments).
   2. Sinon, installer le paquet npm du serveur avec `zed::npm_install_package` et le lancer.
-     **Pas encore implémenté** (aucun paquet publié) : sans override, `lib.rs` renvoie une erreur
-     explicite demandant de configurer `binary.path`.
+     **Pas encore implémenté** (aucun paquet publié) : sans `server_path`, `lib.rs` renvoie une
+     erreur explicite demandant de le configurer.
 - Toujours lancer Node via `zed::node_binary_path()`, ne jamais supposer `node` dans le PATH.
 - Transmettre `--stdio` au serveur.
 
@@ -297,7 +300,7 @@ cargo check
    ```json
    "lsp": {
      "symfony-zed": {
-       "binary": { "path": "C:\\chemin\\vers\\symfony-zed\\server\\dist\\server.js" }
+       "settings": { "server_path": "C:\\chemin\\vers\\symfony-zed\\server\\dist\\server.js" }
      }
    }
    ```

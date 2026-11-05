@@ -35,14 +35,15 @@ Pensée d'abord pour Windows, fonctionne aussi sous macOS et Linux.
    {
      "lsp": {
        "symfony-zed": {
-         "binary": {
-           "path": "C:\\chemin\\vers\\symfony-zed\\server\\dist\\server.js"
+         "settings": {
+           "server_path": "C:\\chemin\\vers\\symfony-zed\\server\\dist\\server.js"
          }
        }
      }
    }
    ```
-   Sans ce réglage, le serveur ne démarre pas (pas encore de paquet npm publié).
+   Sans ce réglage, le serveur ne démarre pas (pas encore de paquet npm publié). Ne pas utiliser
+   `binary.path` pour ce fichier : Zed lancerait alors le `.js` lui-même comme un exécutable.
 4. Ouvrir un projet Symfony, puis palette → `dev: open language server logs` et choisir
    `symfony-zed`. On doit voir :
    ```
