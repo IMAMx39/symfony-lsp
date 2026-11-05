@@ -4,10 +4,14 @@ Extension [Zed](https://zed.dev) apportant le support de Symfony (templates, rou
 traductions) dans PHP, Twig et YAML, **sans PHP sur l'hôte** et sans démarrer le kernel.
 Pensée d'abord pour Windows, fonctionne aussi sous macOS et Linux.
 
-> Statut : phase 1 (templates). Navigation, complétion et diagnostic des noms de templates
-> en PHP (`render()`, `renderView()`, `renderBlock()`, `#[Template]`) et en Twig (`extends`,
-> `include`, `embed`, `import`, `from`, `use`, `include()`, `source()`), avec les namespaces
-> `@Bundle/`, `@!Bundle/` et `twig.paths`.
+> Statut : phases 1 et 2 terminées.
+>
+> - **Templates** : navigation, complétion et diagnostic des noms de templates en PHP
+>   (`render()`, `renderView()`, `renderBlock()`, `#[Template]`) et en Twig (`extends`, `include`,
+>   `embed`, `import`, `from`, `use`, `include()`, `source()`), namespaces `@Bundle/`, `@!Bundle/`, `twig.paths`.
+> - **Routes** : navigation, complétion, survol et diagnostic des noms de routes dans `path()`, `url()`,
+>   `redirectToRoute()`, `generateUrl()`, et complétion de leurs paramètres. Les routes de bundles et le
+>   diagnostic nécessitent le cache `var/cache/dev/` (généré par Symfony dans le conteneur).
 
 ## Prérequis
 

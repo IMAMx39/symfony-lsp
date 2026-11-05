@@ -27,29 +27,35 @@ symfony-zed/
 ├── server/                 # Serveur LSP TypeScript (toute la logique Symfony)
 │   ├── package.json
 │   ├── tsconfig.json
+│   ├── scripts/build.mjs           # esbuild + copie des .wasm + imports ?raw
 │   ├── src/
-│   │   ├── server.ts               # Bootstrap LSP, enregistrement des capabilities
+│   │   ├── server.ts               # Bootstrap LSP, câblage des handlers et watchers
 │   │   ├── project/
-│   │   │   ├── SymfonyProject.ts   # Détection projet, racine, chemins clés
-│   │   │   └── TwigConfig.ts       # Lecture config/packages/twig.yaml (paths, namespaces)
+│   │   │   ├── SymfonyProject.ts   # Détection projet, racine
+│   │   │   ├── ComposerAutoload.ts # PSR-4 de composer.json + vendor/composer/installed.json
+│   │   │   ├── bundles.ts          # Bundles activés (bundles.php), racine d'un bundle
+│   │   │   ├── TwigConfig.ts       # Lecture twig.yaml (default_path, paths, when@dev)
+│   │   │   ├── TwigLoaderPaths.ts  # Dossiers par namespace, dans l'ordre de TwigBundle
+│   │   │   ├── TemplateResolver.ts # Nom de template → fichier
+│   │   │   └── ProjectTemplates.ts # Regroupe chemins, résolveur et index d'un projet
+│   │   ├── routing/                # Extraction des routes : #[Route], YAML, cache compilé
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
-│   │   │   ├── RouteIndex.ts
-│   │   │   ├── ServiceIndex.ts
-│   │   │   └── TranslationIndex.ts
+│   │   │   └── RouteIndex.ts
 │   │   ├── parsing/
 │   │   │   ├── parsers.ts          # Init web-tree-sitter (PHP, Twig)
+│   │   │   ├── DocumentTrees.ts    # Arbres des documents ouverts (cache par version)
+│   │   │   ├── literals.ts / phpValues.ts / phpNames.ts  # Littéraux, valeurs, noms de classes
 │   │   │   └── queries/            # Requêtes tree-sitter (.scm)
 │   │   ├── features/               # Un dossier par fonctionnalité
-│   │   │   ├── templates/          # definition, completion, hover, diagnostics
-│   │   │   ├── routes/
-│   │   │   ├── services/
-│   │   │   └── translations/
+│   │   │   ├── templates/          # definition, completion, diagnostics
+│   │   │   └── routes/             # definition, completion, hover, paramètres, diagnostics
 │   │   └── util/
 │   │       └── paths.ts            # Normalisation chemins/URI cross-platform
 │   └── tests/
 │       ├── fixtures/symfony-app/   # Mini projet Symfony réaliste
-│       └── features/               # Tests par fonctionnalité
+│       ├── features/               # Tests par fonctionnalité
+│       ├── index/ project/ routing/ util/
 └── CLAUDE.md
 ```
 
@@ -173,6 +179,12 @@ Positions reconnues : premier argument littéral de `path()`, `url()` (Twig), `-
 `->generateUrl()` (PHP). Pas `->generate()` (trop générique). Définition : attribut ou clé YAML,
 sinon méthode du contrôleur via PSR-4 (contrôleur en id de service : rien avant la phase 3).
 
+Complétion des paramètres : variables du chemin non utilisées, en position de clé seulement.
+Diagnostic « route inconnue » (Warning, code `route-not-found`) seulement si
+`RouteIndex.isCertain()` : cache compilé présent, aucun YAML illisible / import glob / import YAML
+imbriqué / chemin localisé, aucun `#[Route]` à nom non littéral, aucune config de routes en PHP.
+Limite connue : une route supprimée des sources mais encore dans un cache périmé reste « connue ».
+
 ---
 
 ## Roadmap
@@ -196,7 +208,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Definition + completion : `path()`, `url()` (Twig), `redirectToRoute()`, `generateUrl()` (PHP)
 - [x] Hover : chemin, méthodes HTTP, contrôleur
 - [x] Completion des paramètres de route
-- [ ] Diagnostic : route inconnue
+- [x] Diagnostic : route inconnue
 
 ### Phase 3 : services
 - [ ] Definition + completion des IDs dans `config/services.yaml` (`@service_id`)

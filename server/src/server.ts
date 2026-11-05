@@ -10,6 +10,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { provideRouteNameCompletion } from './features/routes/completion';
 import { provideRouteDefinition } from './features/routes/definition';
+import { provideRouteDiagnostics } from './features/routes/diagnostics';
 import { provideRouteHover } from './features/routes/hover';
 import { provideRouteParameterCompletion } from './features/routes/parameterCompletion';
 import { RouteReferenceFinder, type RouteReference } from './features/routes/RouteReferenceFinder';
@@ -271,7 +272,10 @@ function publishDiagnostics(uri: string): void {
   }
   const { document, context } = analyzed;
   const { resolver, loaderPaths } = context.templates;
-  const diagnostics = provideTemplateDiagnostics(document, analyzed.templates, resolver, (namespace) => loaderPaths.isCertain(namespace));
+  const diagnostics = [
+    ...provideTemplateDiagnostics(document, analyzed.templates, resolver, (namespace) => loaderPaths.isCertain(namespace)),
+    ...provideRouteDiagnostics(document, analyzed.routes, context.routes),
+  ];
   void connection.sendDiagnostics({ uri, version: document.version, diagnostics });
 }
 
