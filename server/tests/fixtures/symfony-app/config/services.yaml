@@ -1,0 +1,50 @@
+parameters:
+    app.sender: 'noreply@example.com'
+    app.not_a_reference: '@app.mailer'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+        bind:
+            $defaultLogger: '@logger'
+
+    _instanceof:
+        App\Service\MailerAware:
+            calls:
+                - setMailer: ['@app.mailer']
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/Kernel.php'
+
+    App\Service\Mailer:
+        arguments:
+            $sender: '%app.sender%'
+            $transport: '@!mailer.transport'
+
+    app.mailer:
+        alias: App\Service\Mailer
+        public: true
+
+    app.newsletter:
+        class: App\Service\Newsletter
+        arguments: ['@app.mailer', '@?app.optional', '@@escaped', '@=service("app.mailer")', "@logger", '@unknown.service']
+        tags:
+            - { name: 'app.tag', ref: '@app.mailer' }
+
+    app.mailer_short: '@app.mailer'
+
+    app.child_mailer:
+        parent: app.newsletter
+
+when@dev:
+    services:
+        app.debug_mailer:
+            class: App\Service\Mailer
+
+when@prod:
+    services:
+        app.prod_mailer:
+            class: App\Service\Mailer

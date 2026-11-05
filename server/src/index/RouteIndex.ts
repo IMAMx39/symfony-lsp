@@ -1,15 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { Location, Range } from 'vscode-languageserver';
-import { TextDocument } from 'vscode-languageserver-textdocument';
+import type { Location } from 'vscode-languageserver';
 import type { Parsers } from '../parsing/parsers';
-import { fileNamespace } from '../parsing/phpNames';
 import { ComposerAutoload } from '../project/ComposerAutoload';
+import { locateClass } from '../project/classLocation';
 import { extractAttributeRoutes } from '../routing/attributeRoutes';
 import { parseCompiledGeneratorRoutes, parseCompiledMatcherMethods } from '../routing/compiledRoutes';
 import type { RouteExtraction, RouteImport, RouteInfo } from '../routing/types';
 import { parseRouteYaml } from '../routing/yamlRoutes';
-import { isInsidePath, pathKey, pathToUri } from '../util/paths';
+import { isInsidePath, pathKey } from '../util/paths';
 
 /** Environment whose routes are mirrored (the one developers run). */
 export const ROUTING_ENV = 'dev';
@@ -211,40 +210,8 @@ export class RouteIndex {
   /** `App\Controller\X::method` or invokable `App\Controller\X` → method name in its file. */
   private findControllerLocation(controller: string): Location | null {
     const [className, method = '__invoke'] = controller.split('::');
-    if (!className || !className.includes('\\')) {
-      return null; // service id: needs the container (phase 3)
-    }
-    const file = this.autoload.findClassFile(className);
-    const source = file === null ? null : readText(file);
-    if (file === null || source === null) {
-      return null;
-    }
-    const tree = this.parsers.parse('php', source);
-    if (tree === null) {
-      return null;
-    }
-    try {
-      const shortName = className.split('\\').pop();
-      const namespace = fileNamespace(tree.rootNode);
-      const declaration = tree.rootNode
-        .descendantsOfType('class_declaration')
-        .find((node) => node?.childForFieldName('name')?.text === shortName);
-      if (!declaration || (namespace ?? '') !== className.split('\\').slice(0, -1).join('\\')) {
-        return null;
-      }
-      const methodNode = declaration
-        .childForFieldName('body')
-        ?.namedChildren.find((member) => member?.type === 'method_declaration' && member.childForFieldName('name')?.text === method)
-        ?.childForFieldName('name');
-      const target = methodNode ?? declaration.childForFieldName('name');
-      if (!target) {
-        return null;
-      }
-      const document = TextDocument.create(pathToUri(file), 'php', 0, source);
-      return Location.create(document.uri, Range.create(document.positionAt(target.startIndex), document.positionAt(target.endIndex)));
-    } finally {
-      tree.delete();
-    }
+    // A controller without namespace is a service id: resolved through the container (phase 3).
+    return className ? locateClass(this.autoload, this.parsers, className, method) : null;
   }
 }
 

@@ -37,11 +37,14 @@ symfony-zed/
 │   │   │   ├── TwigConfig.ts       # Lecture twig.yaml (default_path, paths, when@dev)
 │   │   │   ├── TwigLoaderPaths.ts  # Dossiers par namespace, dans l'ordre de TwigBundle
 │   │   │   ├── TemplateResolver.ts # Nom de template → fichier
-│   │   │   └── ProjectTemplates.ts # Regroupe chemins, résolveur et index d'un projet
+│   │   │   ├── ProjectTemplates.ts # Regroupe chemins, résolveur et index d'un projet
+│   │   │   └── classLocation.ts    # Classe (ou méthode) → emplacement, via PSR-4
 │   │   ├── routing/                # Extraction des routes : #[Route], YAML, cache compilé
+│   │   ├── services/               # Container XML compilé, services et références `@id` du YAML
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
-│   │   │   └── RouteIndex.ts
+│   │   │   ├── RouteIndex.ts
+│   │   │   └── ServiceIndex.ts
 │   │   ├── parsing/
 │   │   │   ├── parsers.ts          # Init web-tree-sitter (PHP, Twig)
 │   │   │   ├── DocumentTrees.ts    # Arbres des documents ouverts (cache par version)
@@ -49,13 +52,14 @@ symfony-zed/
 │   │   │   └── queries/            # Requêtes tree-sitter (.scm)
 │   │   ├── features/               # Un dossier par fonctionnalité
 │   │   │   ├── templates/          # definition, completion, diagnostics
-│   │   │   └── routes/             # definition, completion, hover, paramètres, diagnostics
+│   │   │   ├── routes/             # definition, completion, hover, paramètres, diagnostics
+│   │   │   └── services/           # definition, completion (YAML)
 │   │   └── util/
 │   │       └── paths.ts            # Normalisation chemins/URI cross-platform
 │   └── tests/
 │       ├── fixtures/symfony-app/   # Mini projet Symfony réaliste
 │       ├── features/               # Tests par fonctionnalité
-│       ├── index/ project/ routing/ util/
+│       ├── index/ project/ routing/ services/ util/
 └── CLAUDE.md
 ```
 
@@ -114,7 +118,7 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 | Templates | `twig.default_path` et `twig.paths` (YAML de `config/packages/` puis `config/packages/dev/`, chacun suivi de son bloc `when@dev` ; les configs PHP ne sont pas lues), templates des bundles activés en `dev` dans `config/bundles.php`, vues de twig-bridge |
 | Classes des bundles | PSR-4 de `composer.json` et `vendor/composer/installed.json` ; racine du bundle déduite de la classe (`Bundle` → dossier de la classe, `AbstractBundle` → parent, ou `getPath()` littéral `__DIR__` / `dirname(__DIR__[, n])`) ; sinon bundle ignoré |
 | Overrides de bundles | `<default_path>/bundles/<NomBundle>/...` (prioritaires sur le bundle) |
-| Services | `var/cache/dev/App_KernelDevDebugContainer.xml` (nom à détecter par glob `*Container.xml`) |
+| Services | `var/cache/dev/App_KernelDevDebugContainer.xml` (glob `*Container.xml`, le plus récent gagne), puis clés explicites de `config/services.yaml` et `config/services_dev.yaml` |
 | Routes | Attributs `#[Route]` dans `src/Controller/**`, fichiers `config/routes/*.yaml`, et `var/cache/dev/url_generating_routes.php` si présent |
 | Traductions | `translations/*.{yaml,xlf}` (domaine et locale déduits du nom de fichier) |
 | Entités Doctrine | Attributs `#[ORM\Entity]` dans `src/Entity/**` |
@@ -184,6 +188,26 @@ Diagnostic « route inconnue » (Warning, code `route-not-found`) seulement si
 `RouteIndex.isCertain()` : cache compilé présent, aucun YAML illisible / import glob / import YAML
 imbriqué / chemin localisé, aucun `#[Route]` à nom non littéral, aucune config de routes en PHP.
 Limite connue : une route supprimée des sources mais encore dans un cache périmé reste « connue ».
+
+### Services
+
+`ServiceIndex` fusionne, de la priorité la plus basse à la plus haute :
+1. le container dumpé en debug (`var/cache/dev/*Container.xml`) : seuls les `<service>` directement
+   sous `<services>` (id, `class`, `alias`), les services inline imbriqués sont ignorés. Il couvre
+   les bundles et les classes enregistrées par `resource:`, mais peut être périmé, et ne contient
+   pas les services privés retirés à la compilation ;
+2. les clés explicites sous `services:` (+ `when@dev`) de `config/services.yaml` puis
+   `config/services_dev.yaml` (fichiers chargés par `MicroKernelTrait`). Exclus : `_defaults`,
+   `_instanceof`, prototypes `resource:`. Classe : `class:`, sinon l'id s'il est un nom de classe à
+   namespace (comme `ResolveClassPass`), inconnue pour une définition `parent:` (prise du container).
+   Un document ouvert remplace son fichier ; un YAML invalide garde les déclarations précédentes.
+
+Références reconnues : littéraux quotés `'@id'`, `'@?id'`, `'@!id'` (sans échappement) là où
+`YamlFileLoader` résout des références : syntaxe courte `foo: '@bar'` et valeurs de `arguments`,
+`properties`, `calls`, `configurator`, `factory`, `bind` (y compris `_defaults` et `_instanceof`).
+Exclus : `@@` (échappement), `@=` (expression), tags, `parameters:`, autres `when@`.
+Complétion : ids sans ceux commençant par `.` (comme `debug:container`), remplace l'id en gardant
+le préfixe. Définition : clé YAML de la déclaration, sinon classe via PSR-4 en suivant les alias.
 
 ---
 

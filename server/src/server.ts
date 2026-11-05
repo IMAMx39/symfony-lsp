@@ -14,16 +14,20 @@ import { provideRouteDiagnostics } from './features/routes/diagnostics';
 import { provideRouteHover } from './features/routes/hover';
 import { provideRouteParameterCompletion } from './features/routes/parameterCompletion';
 import { RouteReferenceFinder, type RouteReference } from './features/routes/RouteReferenceFinder';
+import { provideServiceCompletion } from './features/services/completion';
+import { provideServiceDefinition } from './features/services/definition';
 import { provideTemplateCompletion } from './features/templates/completion';
 import { provideTemplateDefinition } from './features/templates/definition';
 import { provideTemplateDiagnostics } from './features/templates/diagnostics';
 import { TemplateReferenceFinder, type TemplateReference } from './features/templates/TemplateReferenceFinder';
 import { RouteIndex, routeFileKind } from './index/RouteIndex';
+import { SERVICES_ENV, ServiceIndex, serviceFileKind } from './index/ServiceIndex';
 import { DocumentTrees, languageOf } from './parsing/DocumentTrees';
 import { bundledGrammarFiles, Parsers } from './parsing/parsers';
 import { ProjectTemplates } from './project/ProjectTemplates';
 import { SymfonyProject } from './project/SymfonyProject';
 import { MAIN_NAMESPACE } from './project/TwigLoaderPaths';
+import { findServiceReferences, type ServiceReference } from './services/yamlServices';
 import { isInsidePath, pathKey, uriToPath } from './util/paths';
 
 const SERVER_NAME = 'symfony-zed';
@@ -35,6 +39,7 @@ interface ProjectContext {
   project: SymfonyProject;
   templates: ProjectTemplates;
   routes: RouteIndex;
+  services: ServiceIndex;
   reloadTimers: Map<string, NodeJS.Timeout>;
 }
 
@@ -50,6 +55,12 @@ interface AnalyzedDocument {
   context: ProjectContext;
   templates: TemplateReference[];
   routes: RouteReference[];
+}
+
+interface AnalyzedServicesYaml {
+  document: TextDocument;
+  context: ProjectContext;
+  references: ServiceReference[];
 }
 
 const connection = createConnection(ProposedFeatures.all);
@@ -100,8 +111,9 @@ connection.onInitialized(() => {
       connection.console.info(`[SymfonyProject] Symfony project detected at ${project.root}`);
       const templates = buildTemplates(project);
       const routes = buildRoutes(project);
-      if (templates !== null && routes !== null) {
-        projects.push({ project, templates, routes, reloadTimers: new Map() });
+      const services = buildServices(project);
+      if (templates !== null && routes !== null && services !== null) {
+        projects.push({ project, templates, routes, services, reloadTimers: new Map() });
       }
     }
     if (projects.length > 0) {
@@ -115,6 +127,11 @@ connection.onInitialized(() => {
 
 connection.onDefinition((params) => {
   try {
+    const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
+    if (servicesYaml) {
+      const { document, context, references } = servicesYaml;
+      return provideServiceDefinition(document, params.position, references, context.services);
+    }
     const analyzed = analyze(params.textDocument.uri);
     if (!analyzed) {
       return null;
@@ -142,6 +159,11 @@ connection.onHover((params) => {
 
 connection.onCompletion((params) => {
   try {
+    const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
+    if (servicesYaml) {
+      const { document, context, references } = servicesYaml;
+      return provideServiceCompletion(document, params.position, references, context.services.visibleServices());
+    }
     const analyzed = analyze(params.textDocument.uri);
     if (!analyzed) {
       return null;
@@ -186,13 +208,27 @@ connection.onDidChangeWatchedFiles((params) => {
           scheduleReload(context, 'compiled-routes', () => context.routes.reloadCompiled());
           break;
         case 'autoload':
-          scheduleReload(context, 'autoload', () => context.routes.reloadAutoload());
+          scheduleReload(context, 'autoload', () => {
+            context.routes.reloadAutoload();
+            context.services.reloadAutoload();
+          });
           break;
         case 'source':
           // An open document is the source of truth for its file.
           if (!openDocumentFor(file) && context.routes.updatePhpFile(file, null)) {
             touched.add(context);
           }
+          break;
+      }
+
+      switch (serviceFileKind(file, context.project.root)) {
+        case 'services-config':
+          if (!openDocumentFor(file)) {
+            context.services.updateYamlFile(file, null);
+          }
+          break;
+        case 'container':
+          scheduleReload(context, 'container', () => context.services.reloadContainer());
           break;
       }
     }
@@ -212,6 +248,7 @@ documents.onDidClose((event) => {
   void connection.sendDiagnostics({ uri, diagnostics: [] });
   // Back to the file on disk (unsaved changes are discarded).
   const context = projectFor(uri);
+  context?.services.updateYamlFile(uriToPath(uri), null);
   if (context?.routes.updatePhpFile(uriToPath(uri), null)) {
     revalidateProject(context);
   }
@@ -234,6 +271,16 @@ function analyze(uri: string): AnalyzedDocument | null {
     templates: parsing.templateReferences.find(language, tree.rootNode),
     routes: parsing.routeReferences.find(language, tree.rootNode),
   };
+}
+
+/** An open config/services{,_dev}.yaml of a project, with its `'@id'` references. */
+function analyzeServicesYaml(uri: string): AnalyzedServicesYaml | null {
+  const document = documents.get(uri);
+  const context = document && projectFor(uri);
+  if (!document || !context || serviceFileKind(uriToPath(uri), context.project.root) !== 'services-config') {
+    return null;
+  }
+  return { document, context, references: findServiceReferences(document.getText(), SERVICES_ENV) };
 }
 
 function scheduleDiagnostics(document: TextDocument): void {
@@ -259,6 +306,7 @@ function refreshDocument(uri: string): void {
     if (languageOf(uri) === 'php' && context.routes.updatePhpFile(uriToPath(uri), document.getText())) {
       revalidateProject(context, uri);
     }
+    context.services.updateYamlFile(uriToPath(uri), document.getText());
     publishDiagnostics(uri);
   } catch (error) {
     connection.console.error(`[Diagnostics] ${formatError(error)}`);
@@ -332,9 +380,21 @@ function buildRoutes(project: SymfonyProject): RouteIndex | null {
   return routes;
 }
 
+function buildServices(project: SymfonyProject): ServiceIndex | null {
+  if (parsing === null) {
+    return null;
+  }
+  const services = new ServiceIndex(project.root, parsing.parsers);
+  connection.console.info(
+    `[ServiceIndex] ${services.visibleServices().length} services indexed` +
+      (services.hasContainer() ? '' : ' (no compiled container in var/cache/dev: only services declared in YAML are known)'),
+  );
+  return services;
+}
+
 function registerFileWatchers(): void {
   if (!canWatchFiles) {
-    connection.console.warn('[Server] Client cannot watch files: restart the server after adding templates or routes');
+    connection.console.warn('[Server] Client cannot watch files: restart the server after adding templates, routes or services');
     return;
   }
   const globs = [
@@ -351,6 +411,8 @@ function registerFileWatchers(): void {
     '**/src/**/*.php',
     '**/var/cache/dev/url_generating_routes.php',
     '**/var/cache/dev/url_matching_routes.php',
+    '**/config/services*.yaml',
+    '**/var/cache/dev/*Container.xml',
     '**/composer.json',
     '**/vendor/composer/installed.json',
   ];

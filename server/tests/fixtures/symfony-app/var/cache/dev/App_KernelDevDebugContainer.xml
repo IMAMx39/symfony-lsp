@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="utf-8"?>
+<container xmlns="http://symfony.com/schema/dic/services" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://symfony.com/schema/dic/services https://symfony.com/schema/dic/services/services-1.0.xsd">
+  <parameters>
+    <parameter key="kernel.project_dir">/var/www/html</parameter>
+    <parameter key="kernel.environment">dev</parameter>
+  </parameters>
+  <services>
+    <service id="service_container" class="Symfony\Component\DependencyInjection\ContainerInterface" public="true" synthetic="true"/>
+    <service id="App\Service\Mailer" class="App\Service\Mailer" autowire="true" autoconfigure="true">
+      <argument>noreply@example.com</argument>
+      <argument type="service" id="mailer.transport" on-invalid="ignore_uninitialized"/>
+      <argument type="service" id="logger"/>
+    </service>
+    <service id="App\Service\Newsletter" class="App\Service\Newsletter" autowire="true" autoconfigure="true">
+      <argument type="service" id="App\Service\Mailer"/>
+    </service>
+    <service id="app.newsletter" class="App\Service\Newsletter" autowire="true" autoconfigure="true">
+      <argument type="service" id="App\Service\Mailer"/>
+      <argument type="service">
+        <service class="App\Service\InlineHelper"/>
+      </argument>
+      <tag name="app.tag" ref="@app.mailer"/>
+    </service>
+    <service id="app.child_mailer" class="App\Service\Newsletter" autowire="true" autoconfigure="true"/>
+    <service id="logger" class="\Symfony\Component\HttpKernel\Log\Logger">
+      <tag name="kernel.reset" method="reset"/>
+    </service>
+    <service id="mailer.transport" class="Acme\FooBundle\Mailer\Transport"/>
+    <service id="compiled.only" class="App\Service\Newsletter"/>
+    <service id=".service_locator.Xyz123" class="Symfony\Component\DependencyInjection\ServiceLocator">
+      <tag name="container.service_locator"/>
+    </service>
+    <service id="app.mailer" alias="App\Service\Mailer" public="true"/>
+    <service id="app.mailer_short" alias="app.mailer"/>
+    <service id="Psr\Log\LoggerInterface" alias="logger"/>
+    <service id="app.mailer.public" alias="compiled.only" public="true"/>
+  </services>
+</container>
