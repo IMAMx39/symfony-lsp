@@ -8,19 +8,22 @@
     "node": ">=20"
   },
   "scripts": {
-    "build": "esbuild src/server.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/server.js --sourcemap",
-    "watch": "npm run build -- --watch",
+    "build": "node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
     "test": "vitest run",
     "lint": "tsc --noEmit"
   },
   "dependencies": {
     "vscode-languageserver": "^11.0.0",
     "vscode-languageserver-textdocument": "^1.0.16",
-    "vscode-uri": "^3.2.0"
+    "vscode-uri": "^3.2.0",
+    "web-tree-sitter": "0.25.10"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "esbuild": "^0.28.2",
+    "tree-sitter-php": "0.24.2",
+    "tree-sitter-twig": "0.8.2",
     "typescript": "^7.0.2",
     "vitest": "^5.1.0"
   }

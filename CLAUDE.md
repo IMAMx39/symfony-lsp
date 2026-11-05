@@ -66,9 +66,19 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
   - `vscode-languageserver` + `vscode-languageserver-textdocument` : protocole LSP
   - `vscode-uri` : conversion chemin ⇄ URI (obligatoire, jamais à la main)
   - `web-tree-sitter` + grammaires WASM PHP et Twig : parsing tolérant aux fichiers incomplets
+    - **Épinglé en `0.25.10`** : `tree-sitter-twig` 0.8.2 publie un WASM ABI 14 que
+      `web-tree-sitter` ≥ 0.26 refuse de charger. Ne monter qu'avec un WASM Twig compatible.
+    - Grammaires : devDependencies `tree-sitter-php` et `tree-sitter-twig` (versions exactes),
+      dont seuls les `.wasm` servent. `server/.npmrc` met `ignore-scripts=true` : leurs scripts
+      d'installation compilent un binding natif (node-gyp + Visual Studio) inutile ici.
+    - Les index tree-sitter (`startIndex`) sont en unités UTF-16 : convertir via
+      `TextDocument.positionAt()`, jamais à partir de `startPosition`.
+    - Les arbres vivent dans le tas WASM : appeler `tree.delete()` quand on les remplace.
   - `yaml` : lecture des fichiers de config et traductions YAML
   - `fast-xml-parser` : lecture du container compilé
-  - `esbuild` : bundle en un seul `dist/server.js`
+  - `esbuild` : bundle `dist/server.js` via `scripts/build.mjs`, qui copie aussi les 3 `.wasm`
+    dans `dist/`, force la build CommonJS de `web-tree-sitter` et gère les imports `?raw`
+    (requêtes `.scm` inlinées, même convention que Vite dans les tests)
   - `vitest` : tests
 
 **Ne pas ajouter d'autre dépendance sans me demander.**
@@ -109,6 +119,10 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
   templates du bundle `FooBundle`, sinon chemin déclaré dans `twig.paths` avec le namespace `Foo`.
 - `'@!Foo/...'` → idem sans tenir compte de l'override.
 - Si plusieurs fichiers correspondent, renvoyer le premier selon l'ordre de priorité Twig.
+- La résolution est **sensible à la casse sur toutes les plateformes** : le projet tourne dans un
+  conteneur Linux, où `Home/index.html.twig` ne trouve pas `home/index.html.twig`.
+- Seules les chaînes littérales comptent : `'...'` sans `\`, ou `"..."` sans interpolation ni
+  échappement. Concaténation, variable ou argument nommé : aucune réponse.
 
 ---
 
