@@ -97,6 +97,11 @@ export class ServiceIndex {
     return this.visibleServices().filter((service) => service.alias === id);
   }
 
+  /** Declaration of a class, interface, trait or enum, found through PSR-4. */
+  classLocation(className: string): Location | null {
+    return locateClass(this.autoload, this.parsers, className);
+  }
+
   /** Declaration of the service (YAML key), else the class it resolves to, following aliases. */
   locationOf(service: ServiceInfo): Location | null {
     let current: ServiceInfo | undefined = service;

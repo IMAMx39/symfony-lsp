@@ -208,6 +208,9 @@ Références reconnues : littéraux quotés `'@id'`, `'@?id'`, `'@!id'` (sans é
 Exclus : `@@` (échappement), `@=` (expression), tags, `parameters:`, autres `when@`.
 Complétion : ids sans ceux commençant par `.` (comme `debug:container`), remplace l'id en gardant
 le préfixe. Définition : clé YAML de la déclaration, sinon classe via PSR-4 en suivant les alias.
+Définition de classe dans ces YAML : clé de service qui est un nom de classe à namespace, valeur de
+`class:`, clés de `_instanceof` → déclaration (classe, interface, trait ou enum) via PSR-4. Les
+prototypes `App\:` (namespace) et les ids sans namespace ne mènent nulle part.
 Survol (mêmes positions, YAML et `#[Autowire]`) : cible finale de la chaîne d'alias, sa classe,
 ses tags (union du container, autoconfiguration comprise, et du YAML ; un `<tag>` dont le nom est
 en texte compte aussi), ses autres alias directs visibles, et l'emplacement de la déclaration.
@@ -261,10 +264,10 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Diagnostic : route inconnue
 
 ### Phase 3 : services
-- [ ] Definition + completion des IDs dans `config/services.yaml` (`@service_id`)
-- [ ] `#[Autowire(service: '...')]`, `#[Autowire('%param%')]`
-- [ ] Hover : classe, tags, alias
-- [ ] Diagnostic : service inconnu (uniquement si le container compilé est présent et la config lisible)
+- [x] Definition + completion des IDs dans `config/services.yaml` (`@service_id`)
+- [x] `#[Autowire(service: '...')]`, `#[Autowire('%param%')]`
+- [x] Hover : classe, tags, alias
+- [x] Diagnostic : service inconnu (uniquement si le container compilé est présent et la config lisible)
 
 ### Phase 4 : traductions
 - [ ] Definition + completion : `trans()`, `|trans`, `{% trans %}`

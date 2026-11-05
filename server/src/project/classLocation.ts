@@ -6,8 +6,10 @@ import { fileNamespace } from '../parsing/phpNames';
 import { pathToUri } from '../util/paths';
 import type { ComposerAutoload } from './ComposerAutoload';
 
+const CLASS_LIKE_DECLARATIONS = ['class_declaration', 'interface_declaration', 'trait_declaration', 'enum_declaration'];
+
 /**
- * Name of a class declaration found through PSR-4, or of one of its methods (falls back to
+ * Name of a class (or interface, trait, enum) declaration found through PSR-4, or of one of its methods (falls back to
  * the class name when the method is not declared in the class itself). Null when the file
  * does not exist or does not declare the class in the expected namespace.
  */
@@ -29,7 +31,7 @@ export function locateClass(autoload: ComposerAutoload, parsers: Parsers, classN
     const shortName = fqcn.split('\\').pop();
     const namespace = fileNamespace(tree.rootNode);
     const declaration = tree.rootNode
-      .descendantsOfType('class_declaration')
+      .descendantsOfType(CLASS_LIKE_DECLARATIONS)
       .find((node) => node?.childForFieldName('name')?.text === shortName);
     if (!declaration || (namespace ?? '') !== fqcn.split('\\').slice(0, -1).join('\\')) {
       return null;

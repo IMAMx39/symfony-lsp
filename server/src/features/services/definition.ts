@@ -1,7 +1,7 @@
 import type { Location, Position } from 'vscode-languageserver';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { ServiceIndex } from '../../index/ServiceIndex';
-import type { ServiceReference } from '../../services/yamlServices';
+import type { ClassReference, ServiceReference } from '../../services/yamlServices';
 import type { ParameterReference } from './AutowireReferenceFinder';
 
 /** YAML declaration of the referenced service, else its class (aliases followed). */
@@ -31,4 +31,16 @@ export function provideParameterDefinition(
     return null;
   }
   return index.getParameter(reference.name)?.location ?? null;
+}
+
+/** Class named by a service key, a `class:` value or an `_instanceof` key. */
+export function provideClassDefinition(
+  document: TextDocument,
+  position: Position,
+  references: readonly ClassReference[],
+  index: ServiceIndex,
+): Location | null {
+  const offset = document.offsetAt(position);
+  const reference = references.find((candidate) => offset >= candidate.start && offset < candidate.end);
+  return reference ? index.classLocation(reference.className) : null;
 }

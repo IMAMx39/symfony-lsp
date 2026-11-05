@@ -2,7 +2,7 @@
  * Route variables, as RouteCompiler::VARIABLE_REGEX parses them, plus the Symfony 7.1
  * mapping syntax: `{name}`, `{!name}`, `{name<\d+>}`, `{name?default}`, `{name:entity.field}`.
  */
-const VARIABLE = /\{!?([A-Za-z_\u0080-￿][\w\u0080-￿]*)(?::[\w.\u0080-￿]*)?(?:<[^>]*>)?(?:\?[^}]*)?\}/g;
+const VARIABLE = /\{!?([A-Za-z_\u0080-\uffff][\w\u0080-\uffff]*)(?::[\w.\u0080-\uffff]*)?(?:<[^>]*>)?(?:\?[^}]*)?\}/g;
 
 /** Variable names of a route path, in order of appearance, without duplicates. */
 export function pathVariables(path: string): string[] {

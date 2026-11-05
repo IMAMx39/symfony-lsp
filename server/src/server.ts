@@ -16,7 +16,7 @@ import { provideRouteParameterCompletion } from './features/routes/parameterComp
 import { RouteReferenceFinder, type RouteReference } from './features/routes/RouteReferenceFinder';
 import { AutowireReferenceFinder, type AutowireReferences } from './features/services/AutowireReferenceFinder';
 import { provideParameterCompletion, provideServiceCompletion } from './features/services/completion';
-import { provideParameterDefinition, provideServiceDefinition } from './features/services/definition';
+import { provideClassDefinition, provideParameterDefinition, provideServiceDefinition } from './features/services/definition';
 import { provideServiceDiagnostics } from './features/services/diagnostics';
 import { provideServiceHover } from './features/services/hover';
 import { provideTemplateCompletion } from './features/templates/completion';
@@ -30,7 +30,7 @@ import { bundledGrammarFiles, Parsers } from './parsing/parsers';
 import { ProjectTemplates } from './project/ProjectTemplates';
 import { SymfonyProject } from './project/SymfonyProject';
 import { MAIN_NAMESPACE } from './project/TwigLoaderPaths';
-import { findServiceReferences, type ServiceReference } from './services/yamlServices';
+import { findClassReferences, findServiceReferences, type ServiceReference } from './services/yamlServices';
 import { isInsidePath, pathKey, uriToPath } from './util/paths';
 
 const SERVER_NAME = 'symfony-zed';
@@ -137,7 +137,10 @@ connection.onDefinition((params) => {
     const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
     if (servicesYaml) {
       const { document, context, references } = servicesYaml;
-      return provideServiceDefinition(document, params.position, references, context.services);
+      return (
+        provideServiceDefinition(document, params.position, references, context.services) ??
+        provideClassDefinition(document, params.position, findClassReferences(document.getText(), SERVICES_ENV), context.services)
+      );
     }
     const analyzed = analyze(params.textDocument.uri);
     if (!analyzed) {

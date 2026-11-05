@@ -8,7 +8,7 @@ import type { ParameterInfo, ServiceInfo } from './types';
 const REFERENCE_KEYS = new Set(['arguments', 'properties', 'calls', 'configurator', 'factory', 'bind']);
 
 /** Same shape as the class names ResolveClassPass accepts as a service id (namespaced only). */
-const NAMESPACED_CLASS = /^[A-Za-z_\x7f-￿][\w\x7f-￿]*(?:\\[A-Za-z_\x7f-￿][\w\x7f-￿]*)+$/;
+const NAMESPACED_CLASS = /^[A-Za-z_\x7f-\uffff][\w\x7f-\uffff]*(?:\\[A-Za-z_\x7f-\uffff][\w\x7f-\uffff]*)+$/;
 
 /** A quoted `'@id'` reference. `start`/`end` cover the quotes, `idStart`/`idEnd` the id alone. */
 export interface ServiceReference {
@@ -19,6 +19,13 @@ export interface ServiceReference {
   idEnd: number;
   /** A missing service is tolerated here (`@?id`, `@!id`, nullable autowired parameter). */
   optional: boolean;
+}
+
+/** A class name in a services YAML file. Offsets cover the scalar, quotes included. */
+export interface ClassReference {
+  className: string;
+  start: number;
+  end: number;
 }
 
 export interface ServicesYamlFile {
@@ -71,6 +78,39 @@ function hasImports(document: Document, env: string): boolean {
   }
   const envBlock = document.contents.get(`when@${env}`, true);
   return document.contents.has('imports') || (isMap(envBlock) && envBlock.has('imports'));
+}
+
+/**
+ * Class names of a services YAML file: service keys that are namespaced class names, `class:`
+ * values, and the keys of `_instanceof` (classes or interfaces). Resource prototypes (`App\:`)
+ * name a namespace and are skipped. Works on files being edited: whatever parsed is used.
+ */
+export function findClassReferences(source: string, env: string): ClassReference[] {
+  const document = parseDocument(source);
+  const references: ClassReference[] = [];
+  const add = (node: unknown): void => {
+    if (!isScalar(node) || typeof node.value !== 'string' || !node.range) {
+      return;
+    }
+    const className = node.value.replace(/^\\/, '');
+    if (NAMESPACED_CLASS.test(className)) {
+      references.push({ className, start: node.range[0], end: node.range[1] });
+    }
+  };
+  for (const pair of sectionEntries(document, 'services', env)) {
+    const id = scalarString(pair.key);
+    if (id === '_instanceof') {
+      if (isMap(pair.value)) {
+        pair.value.items.forEach((item) => add(item.key));
+      }
+    } else if (id !== '_defaults') {
+      add(pair.key);
+      if (isMap(pair.value)) {
+        add(pair.value.get('class', true));
+      }
+    }
+  }
+  return references;
 }
 
 /**
