@@ -19,14 +19,20 @@ export function loadParsers(): Promise<Parsers> {
 }
 
 /**
- * Builds a document from a source containing a single `|` cursor marker.
+ * Builds a document from a source containing a single cursor marker (`|` by default;
+ * pass another marker when the source itself needs `|`, e.g. Twig filters).
  * Returns the document (marker removed) and the cursor offset.
  */
-export function withCursor(uri: string, languageId: string, source: string): { document: TextDocument; offset: number } {
-  const offset = source.indexOf('|');
-  if (offset === -1 || source.indexOf('|', offset + 1) !== -1) {
-    throw new Error('Source must contain exactly one | cursor marker');
+export function withCursor(
+  uri: string,
+  languageId: string,
+  source: string,
+  marker = '|',
+): { document: TextDocument; offset: number } {
+  const offset = source.indexOf(marker);
+  if (offset === -1 || source.indexOf(marker, offset + 1) !== -1) {
+    throw new Error(`Source must contain exactly one ${marker} cursor marker`);
   }
-  const text = source.slice(0, offset) + source.slice(offset + 1);
+  const text = source.slice(0, offset) + source.slice(offset + marker.length);
   return { document: TextDocument.create(uri, languageId, 1, text), offset };
 }

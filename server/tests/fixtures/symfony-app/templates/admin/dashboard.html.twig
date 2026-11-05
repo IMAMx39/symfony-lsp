@@ -1,5 +1,8 @@
 {% extends 'base.html.twig' %}
+{% import 'macros.html.twig' as ui %}
 
 {% block body %}
-    <h1>Dashboard</h1>
+    <h1>Dashboard {{ ui.badge('admin') }}</h1>
+    {% include 'home/_hero.html.twig' %}
+    {{ include('home/_hero.html.twig', {compact: true}) }}
 {% endblock %}

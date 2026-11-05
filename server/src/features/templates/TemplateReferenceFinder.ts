@@ -1,6 +1,7 @@
 import { Query, type Node } from 'web-tree-sitter';
-import type { Parsers } from '../../parsing/parsers';
+import type { DocumentLanguage, Parsers } from '../../parsing/parsers';
 import phpTemplatesQuery from '../../parsing/queries/php-templates.scm?raw';
+import twigTemplatesQuery from '../../parsing/queries/twig-templates.scm?raw';
 
 /** A literal template name in a document. Offsets cover the literal including its quotes. */
 export interface TemplateReference {
@@ -11,9 +12,15 @@ export interface TemplateReference {
 
 export class TemplateReferenceFinder {
   private readonly phpQuery: Query;
+  private readonly twigQuery: Query;
 
   constructor(parsers: Parsers) {
     this.phpQuery = new Query(parsers.php, phpTemplatesQuery);
+    this.twigQuery = new Query(parsers.twig, twigTemplatesQuery);
+  }
+
+  find(language: DocumentLanguage, root: Node): TemplateReference[] {
+    return language === 'php' ? this.findInPhp(root) : this.findInTwig(root);
   }
 
   findInPhp(root: Node): TemplateReference[] {
@@ -34,6 +41,23 @@ export class TemplateReferenceFinder {
     }
     return references;
   }
+
+  findInTwig(root: Node): TemplateReference[] {
+    const references: TemplateReference[] = [];
+    for (const match of this.twigQuery.matches(root)) {
+      const expression = match.captures.find((capture) => capture.name === 'template')?.node;
+      if (expression === undefined) {
+        continue;
+      }
+      for (const literal of twigLiteralCandidates(expression)) {
+        const name = twigStringLiteralValue(literal);
+        if (name !== null) {
+          references.push({ name, start: literal.startIndex, end: literal.endIndex });
+        }
+      }
+    }
+    return references;
+  }
 }
 
 /**
@@ -41,15 +65,47 @@ export class TemplateReferenceFinder {
  * interpolation, escape sequences or syntax errors make the value uncertain.
  */
 export function phpStringLiteralValue(node: Node): string | null {
-  if (node.hasError) {
-    return null;
-  }
-  const text = node.text;
   const quote = node.type === 'string' ? "'" : node.type === 'encapsed_string' ? '"' : null;
-  if (quote === null || text.length < 2 || !text.startsWith(quote) || !text.endsWith(quote)) {
+  if (quote === null || node.hasError) {
     return null;
   }
   if (node.type === 'encapsed_string' && node.namedChildren.some((child) => child?.type !== 'string_content')) {
+    return null;
+  }
+  return unquote(node.text, quote);
+}
+
+/**
+ * Value of a Twig string literal (`'...'` or `"..."`), or null when it is not a plain
+ * literal. Interpolated strings (`"#{x}"`) are a distinct node type and are rejected.
+ */
+export function twigStringLiteralValue(node: Node): string | null {
+  if (node.type !== 'string' || node.hasError) {
+    return null;
+  }
+  const quote = node.text[0];
+  return quote === "'" || quote === '"' ? unquote(node.text, quote) : null;
+}
+
+/** String nodes an expression may evaluate to: itself, array items, ternary branches. */
+function twigLiteralCandidates(expression: Node): Node[] {
+  switch (expression.type) {
+    case 'string':
+      return [expression];
+    case 'array':
+      return expression.namedChildren.filter((child): child is Node => child?.type === 'string');
+    case 'ternary_expression':
+      return ['consequence', 'alternative'].flatMap((field) => {
+        const branch = expression.childForFieldName(field);
+        return branch === null ? [] : twigLiteralCandidates(branch);
+      });
+    default:
+      return [];
+  }
+}
+
+function unquote(text: string, quote: string): string | null {
+  if (text.length < 2 || !text.startsWith(quote) || !text.endsWith(quote)) {
     return null;
   }
   const value = text.slice(1, -1);

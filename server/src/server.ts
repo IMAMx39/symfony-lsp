@@ -79,14 +79,15 @@ connection.onDefinition((params) => {
   try {
     const document = documents.get(params.textDocument.uri);
     const context = document && projectFor(document.uri);
-    if (!document || !context || !parsing || languageOf(document.uri) !== 'php') {
+    const language = document && languageOf(document.uri);
+    if (!document || !context || !parsing || !language) {
       return null;
     }
     const tree = parsing.trees.get(document);
     if (tree === null) {
       return null;
     }
-    const references = parsing.templateReferences.findInPhp(tree.rootNode);
+    const references = parsing.templateReferences.find(language, tree.rootNode);
     return provideTemplateDefinition(document, params.position, references, context.templates);
   } catch (error) {
     connection.console.error(`[Definition] ${formatError(error)}`);

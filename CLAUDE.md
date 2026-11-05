@@ -137,7 +137,8 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 
 ### Phase 1 : templates (priorité)
 - [ ] Definition : `render()`, `renderView()`, `renderBlock()`, `#[Template('...')]` en PHP
-- [ ] Definition Twig : `{% extends %}`, `{% include %}`, `{% embed %}`, `{% import %}`, `{% from %}`, `{{ include() }}`, `{{ source() }}`
+- [ ] Definition Twig : `{% extends %}`, `{% include %}`, `{% embed %}`, `{% import %}`, `{% from %}`, `{% use %}`, `{{ include() }}`, `{{ source() }}`
+      (y compris chaque littéral d'un tableau ou d'un ternaire)
 - [ ] Support des namespaces `@Bundle/` et `twig.paths`
 - [ ] Completion des noms de templates dans ces mêmes positions
 - [ ] Diagnostic : template introuvable (uniquement sur chaîne littérale)
