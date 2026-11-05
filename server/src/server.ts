@@ -10,6 +10,7 @@ import {
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { provideRouteNameCompletion } from './features/routes/completion';
 import { provideRouteDefinition } from './features/routes/definition';
+import { provideRouteHover } from './features/routes/hover';
 import { RouteReferenceFinder, type RouteReference } from './features/routes/RouteReferenceFinder';
 import { provideTemplateCompletion } from './features/templates/completion';
 import { provideTemplateDefinition } from './features/templates/definition';
@@ -76,6 +77,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
     capabilities: {
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
+      hoverProvider: true,
       completionProvider: { triggerCharacters: ["'", '"', '/', '@'] },
     },
     serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
@@ -122,6 +124,16 @@ connection.onDefinition((params) => {
     );
   } catch (error) {
     connection.console.error(`[Definition] ${formatError(error)}`);
+    return null;
+  }
+});
+
+connection.onHover((params) => {
+  try {
+    const analyzed = analyze(params.textDocument.uri);
+    return analyzed && provideRouteHover(analyzed.document, params.position, analyzed.routes, analyzed.context.routes, analyzed.context.project.root);
+  } catch (error) {
+    connection.console.error(`[Hover] ${formatError(error)}`);
     return null;
   }
 });
