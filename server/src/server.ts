@@ -17,6 +17,7 @@ import { RouteReferenceFinder, type RouteReference } from './features/routes/Rou
 import { AutowireReferenceFinder, type AutowireReferences } from './features/services/AutowireReferenceFinder';
 import { provideParameterCompletion, provideServiceCompletion } from './features/services/completion';
 import { provideParameterDefinition, provideServiceDefinition } from './features/services/definition';
+import { provideServiceDiagnostics } from './features/services/diagnostics';
 import { provideServiceHover } from './features/services/hover';
 import { provideTemplateCompletion } from './features/templates/completion';
 import { provideTemplateDefinition } from './features/templates/definition';
@@ -245,8 +246,8 @@ connection.onDidChangeWatchedFiles((params) => {
 
       switch (serviceFileKind(file, context.project.root)) {
         case 'services-config':
-          if (!openDocumentFor(file)) {
-            context.services.updateYamlFile(file, null);
+          if (!openDocumentFor(file) && context.services.updateYamlFile(file, null)) {
+            touched.add(context);
           }
           break;
         case 'container':
@@ -329,7 +330,9 @@ function refreshDocument(uri: string): void {
     if (languageOf(uri) === 'php' && context.routes.updatePhpFile(uriToPath(uri), document.getText())) {
       revalidateProject(context, uri);
     }
-    context.services.updateYamlFile(uriToPath(uri), document.getText());
+    if (context.services.updateYamlFile(uriToPath(uri), document.getText())) {
+      revalidateProject(context, uri);
+    }
     publishDiagnostics(uri);
   } catch (error) {
     connection.console.error(`[Diagnostics] ${formatError(error)}`);
@@ -337,6 +340,13 @@ function refreshDocument(uri: string): void {
 }
 
 function publishDiagnostics(uri: string): void {
+  const servicesYaml = analyzeServicesYaml(uri);
+  if (servicesYaml) {
+    const { document, context, references } = servicesYaml;
+    const diagnostics = provideServiceDiagnostics(document, references, context.services);
+    void connection.sendDiagnostics({ uri, version: document.version, diagnostics });
+    return;
+  }
   const analyzed = analyze(uri);
   if (!analyzed) {
     return;
@@ -346,6 +356,7 @@ function publishDiagnostics(uri: string): void {
   const diagnostics = [
     ...provideTemplateDiagnostics(document, analyzed.templates, resolver, (namespace) => loaderPaths.isCertain(namespace)),
     ...provideRouteDiagnostics(document, analyzed.routes, context.routes),
+    ...provideServiceDiagnostics(document, analyzed.autowire.services, context.services),
   ];
   void connection.sendDiagnostics({ uri, version: document.version, diagnostics });
 }

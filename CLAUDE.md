@@ -53,7 +53,7 @@ symfony-zed/
 │   │   ├── features/               # Un dossier par fonctionnalité
 │   │   │   ├── templates/          # definition, completion, diagnostics
 │   │   │   ├── routes/             # definition, completion, hover, paramètres, diagnostics
-│   │   │   └── services/           # definition, completion (YAML)
+│   │   │   └── services/           # definition, completion, hover, diagnostics (YAML, #[Autowire])
 │   │   └── util/
 │   │       └── paths.ts            # Normalisation chemins/URI cross-platform
 │   └── tests/
@@ -224,6 +224,16 @@ proposés. Définition : clé YAML seulement (un paramètre connu du seul contai
 - `param: 'nom'` et placeholders `%nom%` de la valeur (`%%` = `%` échappé, nom sans espace) →
   paramètre. `%env(...)%` n'a pas de définition. La complétion d'un `%nom` non fermé ajoute le `%`.
 - `expression`, `env` et valeurs non littérales : aucune réponse.
+
+Diagnostic « service inconnu » (Warning, code `service-not-found`) seulement si
+`ServiceIndex.isCertain()` : container dumpé présent et plus récent que `config/packages/**`,
+`config/bundles.php`, `composer.json` et `vendor/composer/installed.json` ; `config/services.yaml`
+existe (sinon `services.php` est chargé) ; YAML de services valides et sans `imports:` (racine ou
+`when@dev`). Et seulement pour une référence obligatoire : pas `@?id` / `@!id`, pas un `#[Autowire]`
+sur un paramètre non typé, nullable (`?T`, `T|null`, `mixed`) ou avec valeur par défaut (prudence :
+`allowsNull()`), pas un id à namespace dont la classe existe via PSR-4 (peut-être enregistrée par
+`resource:` depuis le dernier dump). Limite connue : un service supprimé des sources mais encore
+dans un dump récent reste « connu ».
 
 ---
 

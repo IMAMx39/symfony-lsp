@@ -45,17 +45,37 @@ export class AutowireReferenceFinder {
   find(root: Node): AutowireReferences {
     const references: AutowireReferences = { services: [], parameters: [] };
     for (const match of this.query.matches(root)) {
-      const attribute = match.captures.find((capture) => capture.name === 'attribute')?.node;
+      const attributeName = match.captures.find((capture) => capture.name === 'attribute')?.node;
       const args = match.captures.find((capture) => capture.name === 'arguments')?.node;
-      if (attribute && args && resolveClassName(attribute.text, root) === AUTOWIRE_ATTRIBUTE) {
-        readArguments(args, references);
+      const attribute = args?.parent;
+      if (attributeName && args && attribute && resolveClassName(attributeName.text, root) === AUTOWIRE_ATTRIBUTE) {
+        readArguments(args, references, allowsMissingService(attribute));
       }
     }
     return references;
   }
 }
 
-function readArguments(args: Node, references: AutowireReferences): void {
+/**
+ * True unless the attribute is on a parameter that must receive a service: a nullable, untyped
+ * or defaulted parameter may get null for a missing service (ReflectionParameter::allowsNull()).
+ */
+function allowsMissingService(attribute: Node): boolean {
+  // attribute → attribute_group → attribute_list → parameter
+  const parameter = attribute.parent?.parent?.parent;
+  if (!parameter || !['simple_parameter', 'property_promotion_parameter', 'variadic_parameter'].includes(parameter.type)) {
+    return true;
+  }
+  const type = parameter.childForFieldName('type');
+  return (
+    type === null ||
+    parameter.childForFieldName('default_value') !== null ||
+    type.type === 'optional_type' ||
+    /\b(null|mixed)\b/i.test(type.text)
+  );
+}
+
+function readArguments(args: Node, references: AutowireReferences, optional: boolean): void {
   let position = 0;
   for (const argument of args.namedChildren) {
     if (argument?.type !== 'argument') {
@@ -72,7 +92,14 @@ function readArguments(args: Node, references: AutowireReferences): void {
     const contentEnd = valueNode.endIndex - 1;
     switch (parameter) {
       case 'service':
-        references.services.push({ id: value, start: valueNode.startIndex, end: valueNode.endIndex, idStart: contentStart, idEnd: contentEnd });
+        references.services.push({
+          id: value,
+          start: valueNode.startIndex,
+          end: valueNode.endIndex,
+          idStart: contentStart,
+          idEnd: contentEnd,
+          optional,
+        });
         break;
       case 'param':
         references.parameters.push({
@@ -94,6 +121,7 @@ function readArguments(args: Node, references: AutowireReferences): void {
               end: valueNode.endIndex,
               idStart: contentStart + 1,
               idEnd: contentEnd,
+              optional,
             });
           }
         } else {

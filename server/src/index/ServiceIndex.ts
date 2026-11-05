@@ -40,7 +40,10 @@ interface ContainerData {
  */
 export class ServiceIndex {
   private container: ContainerData | null = null;
+  private containerFile: string | null = null;
   private readonly yamlFiles = new Map<string, ServicesYamlFile>();
+  /** Keys of the services YAML files whose current content is not valid YAML. */
+  private readonly invalidYaml = new Set<string>();
   private merged: ContainerData | null = null;
   private autoload: ComposerAutoload;
 
@@ -109,10 +112,37 @@ export class ServiceIndex {
     return null;
   }
 
+  /**
+   * True when an id missing from the index is really unknown to the container: the dump exists
+   * and is newer than the configuration it was compiled from (config/packages, bundles, Composer
+   * autoload), config/services.yaml is used (not services.php), and every services YAML file is
+   * valid and imports nothing. Classes added since the dump are covered by mayBeAutoregistered().
+   */
+  isCertain(): boolean {
+    const dumpedAt = this.containerFile === null ? null : modificationTime(this.containerFile);
+    const [mainYaml] = servicesYamlFiles(this.projectRoot);
+    if (this.container === null || dumpedAt === null || mainYaml === undefined || modificationTime(mainYaml) === null) {
+      return false;
+    }
+    if (this.invalidYaml.size > 0 || [...this.yamlFiles.values()].some((file) => file.hasImports)) {
+      return false;
+    }
+    return compiledInputs(this.projectRoot).every((file) => (modificationTime(file) ?? 0) <= dumpedAt);
+  }
+
+  /**
+   * True when the id names a class that exists through PSR-4: it may be registered by a
+   * `resource:` prototype after the last dump.
+   */
+  mayBeAutoregistered(id: string): boolean {
+    return id.includes('\\') && this.autoload.findClassFile(id) !== null;
+  }
+
   reloadContainer(): void {
     const file = findContainerXml(path.join(this.projectRoot, 'var', 'cache', SERVICES_ENV));
     const source = file === null ? null : readText(file);
     const dumped = source === null ? null : parseContainerXml(source);
+    this.containerFile = dumped === null ? null : file;
     this.container =
       dumped === null
         ? null
@@ -139,11 +169,14 @@ export class ServiceIndex {
     }
     const key = pathKey(file);
     const source = content ?? readText(file);
+    this.invalidYaml.delete(key);
     if (source === null) {
       this.yamlFiles.delete(key);
     } else {
       const parsed = parseServicesYaml(source, file, SERVICES_ENV);
-      if (parsed !== null) {
+      if (parsed === null) {
+        this.invalidYaml.add(key);
+      } else {
         this.yamlFiles.set(key, parsed);
       }
     }
@@ -184,6 +217,42 @@ export class ServiceIndex {
 function servicesYamlFiles(projectRoot: string): string[] {
   const config = path.join(projectRoot, 'config');
   return [path.join(config, 'services.yaml'), path.join(config, `services_${SERVICES_ENV}.yaml`)];
+}
+
+/** Files whose change makes the compiled container stale (services YAML files are read directly). */
+function compiledInputs(projectRoot: string): string[] {
+  const files = [
+    path.join(projectRoot, 'composer.json'),
+    path.join(projectRoot, 'vendor', 'composer', 'installed.json'),
+    path.join(projectRoot, 'config', 'bundles.php'),
+  ];
+  const pending = [path.join(projectRoot, 'config', 'packages')];
+  while (pending.length > 0) {
+    const dir = pending.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        pending.push(full);
+      } else if (entry.isFile()) {
+        files.push(full);
+      }
+    }
+  }
+  return files;
+}
+
+function modificationTime(file: string): number | null {
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return null;
+  }
 }
 
 function readText(file: string): string | null {

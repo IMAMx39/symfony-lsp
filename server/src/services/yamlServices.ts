@@ -17,11 +17,15 @@ export interface ServiceReference {
   end: number;
   idStart: number;
   idEnd: number;
+  /** A missing service is tolerated here (`@?id`, `@!id`, nullable autowired parameter). */
+  optional: boolean;
 }
 
 export interface ServicesYamlFile {
   services: ServiceInfo[];
   parameters: ParameterInfo[];
+  /** The file imports other files (`imports:`), whose declarations are not read. */
+  hasImports: boolean;
 }
 
 /**
@@ -58,7 +62,15 @@ export function parseServicesYaml(source: string, file: string, env: string): Se
       parameters.push({ name, value: parameterValue(pair.value), location: keyLocation(pair) });
     }
   }
-  return { services, parameters };
+  return { services, parameters, hasImports: hasImports(document, env) };
+}
+
+function hasImports(document: Document, env: string): boolean {
+  if (!isMap(document.contents)) {
+    return false;
+  }
+  const envBlock = document.contents.get(`when@${env}`, true);
+  return document.contents.has('imports') || (isMap(envBlock) && envBlock.has('imports'));
 }
 
 /**
@@ -201,7 +213,7 @@ function referenceOf(node: { type?: string; value: unknown; range?: [number, num
     return null;
   }
   const prefixLength = raw.startsWith('@?') || raw.startsWith('@!') ? 2 : 1;
-  return { id: raw.slice(prefixLength), start, end, idStart: start + 1 + prefixLength, idEnd: end - 1 };
+  return { id: raw.slice(prefixLength), start, end, idStart: start + 1 + prefixLength, idEnd: end - 1, optional: prefixLength === 2 };
 }
 
 function scalarString(node: unknown): string | null {
