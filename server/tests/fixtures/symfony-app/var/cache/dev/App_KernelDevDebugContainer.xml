@@ -3,6 +3,17 @@
   <parameters>
     <parameter key="kernel.project_dir">/var/www/html</parameter>
     <parameter key="kernel.environment">dev</parameter>
+    <parameter key="kernel.debug">true</parameter>
+    <parameter key="kernel.secret">%env(APP_SECRET)%</parameter>
+    <parameter key="app.sender">noreply@example.com</parameter>
+    <parameter key="app.empty"/>
+    <parameter key="kernel.enabled_locales" type="collection">
+      <parameter>en</parameter>
+      <parameter>fr</parameter>
+    </parameter>
+    <parameter key=".kernel.bundles_definition" type="collection">
+      <parameter key="FrameworkBundle" type="collection"/>
+    </parameter>
   </parameters>
   <services>
     <service id="service_container" class="Symfony\Component\DependencyInjection\ContainerInterface" public="true" synthetic="true"/>

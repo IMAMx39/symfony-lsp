@@ -38,6 +38,15 @@ describe('ServiceIndex', () => {
     expect(index.get('.service_locator.Xyz123')).toBeDefined();
   });
 
+  it('merges parameters: compiled value, YAML location, hidden ones left out', () => {
+    expect(index.getParameter('app.sender')).toMatchObject({ value: 'noreply@example.com' });
+    expect(index.getParameter('app.sender')?.location?.range.start).toEqual({ line: 1, character: 4 });
+    expect(index.getParameter('app.not_a_reference')).toMatchObject({ value: '@app.mailer' });
+    expect(index.getParameter('kernel.project_dir')).toMatchObject({ value: '/var/www/html', location: null });
+    expect(index.visibleParameters().some((parameter) => parameter.name.startsWith('.'))).toBe(false);
+    expect(index.getParameter('.kernel.bundles_definition')).toBeDefined();
+  });
+
   it('takes the class of a child definition from the container', () => {
     expect(index.get('app.child_mailer')?.class).toBe('App\\Service\\Newsletter');
   });

@@ -8,7 +8,7 @@ const servicesFile = path.join(fixtureApp, 'config', 'services.yaml');
 const fixtureSource = fs.readFileSync(servicesFile, 'utf8');
 
 describe('parseServicesYaml', () => {
-  const services = parseServicesYaml(fixtureSource, servicesFile, 'dev')!;
+  const { services, parameters } = parseServicesYaml(fixtureSource, servicesFile, 'dev')!;
   const byId = new Map(services.map((service) => [service.id, service]));
 
   it('reads explicit service keys, including the when@dev block', () => {
@@ -44,11 +44,39 @@ describe('parseServicesYaml', () => {
 
   it('handles `~`, empty values and ids without namespace', () => {
     const source = 'services:\n    App\\Foo\\Bar: ~\n    App\\Foo\\Baz:\n    plain: ~\n';
-    expect(parseServicesYaml(source, servicesFile, 'dev')?.map(({ id, class: className }) => [id, className])).toEqual([
+    expect(parseServicesYaml(source, servicesFile, 'dev')?.services.map(({ id, class: className }) => [id, className])).toEqual([
       ['App\\Foo\\Bar', 'App\\Foo\\Bar'],
       ['App\\Foo\\Baz', 'App\\Foo\\Baz'],
       ['plain', null],
     ]);
+  });
+
+  it('reads parameters with their key location, including the when@dev block', () => {
+    const source = [
+      'parameters:',
+      "    a: 'x'",
+      '    b: 3',
+      '    c: ~',
+      '    d: [1, 2]',
+      '    e:',
+      'when@dev:',
+      '    parameters:',
+      '        f: dev',
+      'when@prod:',
+      '    parameters:',
+      '        g: prod',
+    ].join('\n');
+    const parsed = parseServicesYaml(source, servicesFile, 'dev')!.parameters;
+    expect(parsed.map(({ name, value }) => [name, value])).toEqual([
+      ['a', 'x'],
+      ['b', '3'],
+      ['c', 'null'],
+      ['d', null],
+      ['e', 'null'],
+      ['f', 'dev'],
+    ]);
+    expect(parsed[1]?.location?.range.start).toEqual({ line: 2, character: 4 });
+    expect(parameters.map((parameter) => parameter.name)).toEqual(['app.sender', 'app.not_a_reference']);
   });
 
   it('returns null for invalid YAML', () => {

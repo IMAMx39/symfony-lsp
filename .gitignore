@@ -6,3 +6,4 @@
 # Server
 /server/node_modules/
 /server/dist/
+.vscode

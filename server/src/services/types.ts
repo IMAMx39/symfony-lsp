@@ -9,3 +9,11 @@ export interface ServiceInfo {
   /** Where the service is declared (YAML key), null when only known from the container. */
   location: Location | null;
 }
+
+export interface ParameterInfo {
+  name: string;
+  /** Value as text, null for collections or when not a scalar. */
+  value: string | null;
+  /** Where the parameter is declared (YAML key), null when only known from the container. */
+  location: Location | null;
+}

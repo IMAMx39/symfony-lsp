@@ -1,7 +1,8 @@
 import { CompletionItemKind, Range, TextEdit, type CompletionItem, type Position } from 'vscode-languageserver';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { ServiceReference } from '../../services/yamlServices';
-import type { ServiceInfo } from '../../services/types';
+import type { ParameterInfo, ServiceInfo } from '../../services/types';
+import type { ParameterReference } from './AutowireReferenceFinder';
 
 /**
  * Service ids for a cursor inside a `'@...'` reference, after its `@` / `@?` / `@!` prefix.
@@ -25,5 +26,30 @@ export function provideServiceCompletion(
     detail: service.alias === null ? (service.class ?? undefined) : `alias of ${service.alias}`,
     filterText: service.id,
     textEdit: TextEdit.replace(range, service.id),
+  }));
+}
+
+/**
+ * Parameter names for a cursor on the name of a `%name%` placeholder or of `param: 'name'`.
+ * Replaces the whole name, and closes a placeholder being typed (`'%kernel.pro|'`).
+ */
+export function provideParameterCompletion(
+  document: TextDocument,
+  position: Position,
+  references: readonly ParameterReference[],
+  parameters: readonly ParameterInfo[],
+): CompletionItem[] | null {
+  const offset = document.offsetAt(position);
+  const reference = references.find((candidate) => offset >= candidate.nameStart && offset <= candidate.nameEnd);
+  if (reference === undefined) {
+    return null;
+  }
+  const range = Range.create(document.positionAt(reference.nameStart), document.positionAt(reference.nameEnd));
+  return parameters.map((parameter) => ({
+    label: parameter.name,
+    kind: CompletionItemKind.Constant,
+    detail: parameter.value ?? undefined,
+    filterText: parameter.name,
+    textEdit: TextEdit.replace(range, reference.closed ? parameter.name : `${parameter.name}%`),
   }));
 }

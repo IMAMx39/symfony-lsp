@@ -209,6 +209,19 @@ Exclus : `@@` (échappement), `@=` (expression), tags, `parameters:`, autres `wh
 Complétion : ids sans ceux commençant par `.` (comme `debug:container`), remplace l'id en gardant
 le préfixe. Définition : clé YAML de la déclaration, sinon classe via PSR-4 en suivant les alias.
 
+Paramètres : `<parameters>` du container (valeur résolue, collections sans valeur) et clés de
+`parameters:` des mêmes YAML (emplacement de la déclaration). Ceux commençant par `.` ne sont pas
+proposés. Définition : clé YAML seulement (un paramètre connu du seul container n'a pas de cible).
+
+`#[Autowire]` en PHP : uniquement si le nom de l'attribut se résout (via les `use`) en
+`Symfony\Component\DependencyInjection\Attribute\Autowire`. Arguments nommés ou positionnels
+(`value`, `service`, `expression`, `env`, `param`, `lazy`) :
+- `service: 'id'` et valeur `'@id'` → service (`@@` et `@=` exclus, pas de `@?` ici, comme
+  `Autowire::__construct()`) ;
+- `param: 'nom'` et placeholders `%nom%` de la valeur (`%%` = `%` échappé, nom sans espace) →
+  paramètre. `%env(...)%` n'a pas de définition. La complétion d'un `%nom` non fermé ajoute le `%`.
+- `expression`, `env` et valeurs non littérales : aucune réponse.
+
 ---
 
 ## Roadmap
@@ -238,6 +251,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [ ] Definition + completion des IDs dans `config/services.yaml` (`@service_id`)
 - [ ] `#[Autowire(service: '...')]`, `#[Autowire('%param%')]`
 - [ ] Hover : classe, tags, alias
+- [ ] Diagnostic : service inconnu (uniquement si le container compilé est présent et la config lisible)
 
 ### Phase 4 : traductions
 - [ ] Definition + completion : `trans()`, `|trans`, `{% trans %}`
@@ -246,6 +260,22 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 ### Phase 5 : Doctrine et Forms
 - [ ] `getRepository(Entity::class)` → repository
 - [ ] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
+
+### Phase 6 : paramètres et variables d'environnement
+- [ ] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)
+- [ ] Completion des `%env(...)%` (fichiers `.env*`, processeurs `int:`, `bool:`, `json:`…)
+
+### Phase 7 : Messenger et Event Dispatcher
+- [ ] Message → handlers (`#[AsMessageHandler]`, tag `messenger.message_handler`)
+- [ ] Événement → listeners et subscribers (`#[AsEventListener]`, `getSubscribedEvents()`)
+
+### Phase 8 : sécurité
+- [ ] `security.yaml` : firewalls, providers, `access_control` (routes, rôles)
+
+### Phase 9 : publication
+- [ ] Paquet npm du serveur et installation via `zed::npm_install_package` dans `lib.rs`
+- [ ] Vérifier les règles du registre Zed (id d'extension sans `zed` ?) et choisir la licence
+- [ ] Publication dans `zed-industries/extensions`
 
 ---
 

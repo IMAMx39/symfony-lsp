@@ -5,8 +5,8 @@ import type { Parsers } from '../parsing/parsers';
 import { ComposerAutoload } from '../project/ComposerAutoload';
 import { locateClass } from '../project/classLocation';
 import { findContainerXml, parseContainerXml } from '../services/containerXml';
-import type { ServiceInfo } from '../services/types';
-import { parseServicesYaml } from '../services/yamlServices';
+import type { ParameterInfo, ServiceInfo } from '../services/types';
+import { parseServicesYaml, type ServicesYamlFile } from '../services/yamlServices';
 import { isSamePath, pathKey } from '../util/paths';
 
 /** Environment whose container is mirrored (the one developers run). */
@@ -25,17 +25,23 @@ export function serviceFileKind(file: string, projectRoot: string): ServiceFileK
   return new RegExp(`^var/cache/${SERVICES_ENV}/[^/]+Container\\.xml$`).test(relative) ? 'container' : null;
 }
 
+interface ContainerData {
+  services: Map<string, ServiceInfo>;
+  parameters: Map<string, ParameterInfo>;
+}
+
 /**
- * Service ids of a project, merged from (lowest to highest priority):
+ * Service ids and parameters of a project, merged from (lowest to highest priority):
  * 1. the container dumped in debug mode, var/cache/dev/*Container.xml (every service, bundles
  *    and resource-registered classes included, but possibly stale);
- * 2. services declared with an explicit key in config/services.yaml and config/services_dev.yaml
- *    (the files MicroKernelTrait loads). Open documents can override their file (updateYamlFile).
+ * 2. services declared with an explicit key, and parameters, in config/services.yaml and
+ *    config/services_dev.yaml (the files MicroKernelTrait loads). Open documents can override
+ *    their file (updateYamlFile).
  */
 export class ServiceIndex {
-  private container: Map<string, ServiceInfo> | null = null;
-  private readonly yamlFiles = new Map<string, ServiceInfo[]>();
-  private merged: Map<string, ServiceInfo> | null = null;
+  private container: ContainerData | null = null;
+  private readonly yamlFiles = new Map<string, ServicesYamlFile>();
+  private merged: ContainerData | null = null;
   private autoload: ComposerAutoload;
 
   constructor(
@@ -50,12 +56,21 @@ export class ServiceIndex {
   }
 
   get(id: string): ServiceInfo | undefined {
-    return this.servicesById().get(id);
+    return this.data().services.get(id);
   }
 
   /** Ids worth proposing: hidden ids (starting with `.`) are left out, as debug:container does. */
   visibleServices(): ServiceInfo[] {
-    return [...this.servicesById().values()].filter((service) => !service.id.startsWith('.'));
+    return [...this.data().services.values()].filter((service) => !service.id.startsWith('.'));
+  }
+
+  getParameter(name: string): ParameterInfo | undefined {
+    return this.data().parameters.get(name);
+  }
+
+  /** Parameters worth proposing: hidden ones (`.kernel.bundles_definition`…) are left out. */
+  visibleParameters(): ParameterInfo[] {
+    return [...this.data().parameters.values()].filter((parameter) => !parameter.name.startsWith('.'));
   }
 
   hasContainer(): boolean {
@@ -80,8 +95,14 @@ export class ServiceIndex {
   reloadContainer(): void {
     const file = findContainerXml(path.join(this.projectRoot, 'var', 'cache', SERVICES_ENV));
     const source = file === null ? null : readText(file);
-    const services = source === null ? null : parseContainerXml(source);
-    this.container = services === null ? null : new Map(services.map((service) => [service.id, service]));
+    const dumped = source === null ? null : parseContainerXml(source);
+    this.container =
+      dumped === null
+        ? null
+        : {
+            services: new Map(dumped.services.map((service) => [service.id, service])),
+            parameters: new Map(dumped.parameters.map((parameter) => [parameter.name, parameter])),
+          };
     this.merged = null;
   }
 
@@ -104,33 +125,39 @@ export class ServiceIndex {
     if (source === null) {
       this.yamlFiles.delete(key);
     } else {
-      const services = parseServicesYaml(source, file, SERVICES_ENV);
-      if (services !== null) {
-        this.yamlFiles.set(key, services);
+      const parsed = parseServicesYaml(source, file, SERVICES_ENV);
+      if (parsed !== null) {
+        this.yamlFiles.set(key, parsed);
       }
     }
     this.merged = null;
     return true;
   }
 
-  private servicesById(): Map<string, ServiceInfo> {
+  private data(): ContainerData {
     if (this.merged !== null) {
       return this.merged;
     }
-    const merged = new Map<string, ServiceInfo>(this.container ?? []);
+    const services = new Map<string, ServiceInfo>(this.container?.services ?? []);
+    const parameters = new Map<string, ParameterInfo>(this.container?.parameters ?? []);
     // Same order as the kernel: services.yaml, then services_dev.yaml overrides it.
     for (const file of servicesYamlFiles(this.projectRoot)) {
-      for (const service of this.yamlFiles.get(pathKey(file)) ?? []) {
-        const compiled = merged.get(service.id);
-        merged.set(service.id, {
+      const parsed = this.yamlFiles.get(pathKey(file));
+      for (const parameter of parsed?.parameters ?? []) {
+        // The compiled value is the resolved one (placeholders, env overrides): keep it.
+        parameters.set(parameter.name, { ...parameter, value: parameters.get(parameter.name)?.value ?? parameter.value });
+      }
+      for (const service of parsed?.services ?? []) {
+        const compiled = services.get(service.id);
+        services.set(service.id, {
           ...service,
           // A child definition (`parent:`) only gets its class from the compiled container.
           class: service.alias === null ? (service.class ?? compiled?.class ?? null) : null,
         });
       }
     }
-    this.merged = merged;
-    return merged;
+    this.merged = { services, parameters };
+    return this.merged;
   }
 }
 

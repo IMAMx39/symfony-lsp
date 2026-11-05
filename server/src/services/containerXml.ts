@@ -1,9 +1,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
-import type { ServiceInfo } from './types';
+import type { ParameterInfo, ServiceInfo } from './types';
 
 const ATTRIBUTE_PREFIX = '@_';
+const TEXT_KEY = '#text';
+
+export interface DumpedContainer {
+  services: ServiceInfo[];
+  parameters: ParameterInfo[];
+}
 
 /**
  * Container dumped by the kernel in debug mode (ContainerBuilderDebugDumpPass), named after
@@ -27,18 +33,20 @@ export function findContainerXml(cacheDir: string): string | null {
 }
 
 /**
- * Services and aliases of a container dumped by XmlDumper: the `<service>` elements directly
- * under `<services>` (inline services nested in arguments have no id and are skipped).
+ * Services, aliases and parameters of a container dumped by XmlDumper: the `<service>` elements
+ * directly under `<services>` (inline services nested in arguments have no id and are skipped)
+ * and the `<parameter>` elements directly under `<parameters>`.
  * Returns null when the source is not a dumped container.
  */
-export function parseContainerXml(source: string): ServiceInfo[] | null {
+export function parseContainerXml(source: string): DumpedContainer | null {
   let document: unknown;
   try {
     document = new XMLParser({
       ignoreAttributes: false,
       attributeNamePrefix: ATTRIBUTE_PREFIX,
       parseTagValue: false,
-      isArray: (tagName) => tagName === 'service',
+      textNodeName: TEXT_KEY,
+      isArray: (tagName) => tagName === 'service' || tagName === 'parameter',
     }).parse(source);
   } catch {
     return null;
@@ -47,23 +55,43 @@ export function parseContainerXml(source: string): ServiceInfo[] | null {
   if (container === undefined) {
     return null;
   }
-  const services = isRecord(container) ? container['services'] : undefined;
-  const elements = isRecord(services) ? services['service'] : undefined;
-  const result: ServiceInfo[] = [];
-  for (const element of Array.isArray(elements) ? elements : []) {
+  const services: ServiceInfo[] = [];
+  for (const element of children(container, 'services', 'service')) {
     const id = attribute(element, 'id');
     if (id === null) {
       continue;
     }
     const alias = attribute(element, 'alias');
-    result.push({
+    services.push({
       id,
       class: alias === null ? (attribute(element, 'class')?.replace(/^\\/, '') ?? null) : null,
       alias,
       location: null,
     });
   }
-  return result;
+  const parameters: ParameterInfo[] = [];
+  for (const element of children(container, 'parameters', 'parameter')) {
+    const name = attribute(element, 'key');
+    if (name !== null) {
+      parameters.push({ name, value: parameterValue(element), location: null });
+    }
+  }
+  return { services, parameters };
+}
+
+function children(container: unknown, group: string, tag: string): unknown[] {
+  const parent = isRecord(container) ? container[group] : undefined;
+  const elements = isRecord(parent) ? parent[tag] : undefined;
+  return Array.isArray(elements) ? elements : [];
+}
+
+/** Text of a scalar parameter (`<parameter key="x">text</parameter>`), null for a collection. */
+function parameterValue(element: unknown): string | null {
+  if (!isRecord(element) || attribute(element, 'type') === 'collection') {
+    return null;
+  }
+  const text = element[TEXT_KEY];
+  return typeof text === 'string' ? text : '';
 }
 
 function attribute(element: unknown, name: string): string | null {

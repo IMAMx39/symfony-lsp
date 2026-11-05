@@ -2,7 +2,7 @@ import { Location, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from 'yaml';
 import { pathToUri } from '../util/paths';
-import type { ServiceInfo } from './types';
+import type { ParameterInfo, ServiceInfo } from './types';
 
 /** Keys of a service definition whose values YamlFileLoader resolves as references (`@id`). */
 const REFERENCE_KEYS = new Set(['arguments', 'properties', 'calls', 'configurator', 'factory', 'bind']);
@@ -19,35 +19,46 @@ export interface ServiceReference {
   idEnd: number;
 }
 
+export interface ServicesYamlFile {
+  services: ServiceInfo[];
+  parameters: ParameterInfo[];
+}
+
 /**
- * Services declared with an explicit key under `services:` (and `when@<env>: services:`).
- * `_defaults`, `_instanceof` and resource prototypes (`App\: { resource: ... }`) declare no id.
+ * Services declared with an explicit key under `services:` and parameters of `parameters:`
+ * (each also read from the `when@<env>` block). `_defaults`, `_instanceof` and resource
+ * prototypes (`App\: { resource: ... }`) declare no id.
  * Returns null when the file is not valid YAML.
  */
-export function parseServicesYaml(source: string, file: string, env: string): ServiceInfo[] | null {
+export function parseServicesYaml(source: string, file: string, env: string): ServicesYamlFile | null {
   const document = parseDocument(source);
   if (document.errors.length > 0) {
     return null;
   }
   const text = TextDocument.create(pathToUri(file), 'yaml', 0, source);
+  const keyLocation = (pair: Pair): Location | null => {
+    const range = (pair.key as { range?: [number, number, number] }).range;
+    return range ? Location.create(text.uri, Range.create(text.positionAt(range[0]), text.positionAt(range[1]))) : null;
+  };
   const services: ServiceInfo[] = [];
-  for (const pair of serviceEntries(document, env)) {
+  for (const pair of sectionEntries(document, 'services', env)) {
     const id = scalarString(pair.key);
     if (id === null || id === '_defaults' || id === '_instanceof') {
       continue;
     }
     const definition = readDefinition(id, pair.value);
-    if (definition === null) {
-      continue;
+    if (definition !== null) {
+      services.push({ id, ...definition, location: keyLocation(pair) });
     }
-    const range = (pair.key as { range?: [number, number, number] }).range;
-    services.push({
-      id,
-      ...definition,
-      location: range ? Location.create(text.uri, Range.create(text.positionAt(range[0]), text.positionAt(range[1]))) : null,
-    });
   }
-  return services;
+  const parameters: ParameterInfo[] = [];
+  for (const pair of sectionEntries(document, 'parameters', env)) {
+    const name = scalarString(pair.key);
+    if (name !== null) {
+      parameters.push({ name, value: parameterValue(pair.value), location: keyLocation(pair) });
+    }
+  }
+  return { services, parameters };
 }
 
 /**
@@ -60,7 +71,7 @@ export function findServiceReferences(source: string, env: string): ServiceRefer
   const document = parseDocument(source);
   const references: ServiceReference[] = [];
   const collect = (node: unknown): void => collectReferences(node, source, references);
-  for (const pair of serviceEntries(document, env)) {
+  for (const pair of sectionEntries(document, 'services', env)) {
     const id = scalarString(pair.key);
     if (id === '_instanceof' && isMap(pair.value)) {
       pair.value.items.forEach((item) => scanDefinition(item.value, collect));
@@ -73,20 +84,31 @@ export function findServiceReferences(source: string, env: string): ServiceRefer
   return references;
 }
 
-function serviceEntries(document: Document, env: string): Pair[] {
+/** Entries of a top-level section (`services`, `parameters`), then of the same section in `when@<env>`. */
+function sectionEntries(document: Document, section: string, env: string): Pair[] {
   if (!isMap(document.contents)) {
     return [];
   }
   const entries: Pair[] = [];
   for (const pair of document.contents.items) {
     const key = scalarString(pair.key);
-    const services =
-      key === 'services' ? pair.value : key === `when@${env}` && isMap(pair.value) ? pair.value.get('services', true) : null;
-    if (isMap(services)) {
-      entries.push(...services.items);
+    const map = key === section ? pair.value : key === `when@${env}` && isMap(pair.value) ? pair.value.get(section, true) : null;
+    if (isMap(map)) {
+      entries.push(...map.items);
     }
   }
   return entries;
+}
+
+/** Scalar value as text (`~` → `null`), null for collections. */
+function parameterValue(value: unknown): string | null {
+  if (value === null) {
+    return 'null';
+  }
+  if (!isScalar(value)) {
+    return null;
+  }
+  return value.value === null ? 'null' : String(value.value);
 }
 
 function readDefinition(id: string, value: unknown): Pick<ServiceInfo, 'class' | 'alias'> | null {

@@ -14,8 +14,9 @@ import { provideRouteDiagnostics } from './features/routes/diagnostics';
 import { provideRouteHover } from './features/routes/hover';
 import { provideRouteParameterCompletion } from './features/routes/parameterCompletion';
 import { RouteReferenceFinder, type RouteReference } from './features/routes/RouteReferenceFinder';
-import { provideServiceCompletion } from './features/services/completion';
-import { provideServiceDefinition } from './features/services/definition';
+import { AutowireReferenceFinder, type AutowireReferences } from './features/services/AutowireReferenceFinder';
+import { provideParameterCompletion, provideServiceCompletion } from './features/services/completion';
+import { provideParameterDefinition, provideServiceDefinition } from './features/services/definition';
 import { provideTemplateCompletion } from './features/templates/completion';
 import { provideTemplateDefinition } from './features/templates/definition';
 import { provideTemplateDiagnostics } from './features/templates/diagnostics';
@@ -48,6 +49,7 @@ interface ParsingContext {
   trees: DocumentTrees;
   templateReferences: TemplateReferenceFinder;
   routeReferences: RouteReferenceFinder;
+  autowireReferences: AutowireReferenceFinder;
 }
 
 interface AnalyzedDocument {
@@ -55,6 +57,8 @@ interface AnalyzedDocument {
   context: ProjectContext;
   templates: TemplateReference[];
   routes: RouteReference[];
+  /** `#[Autowire]` references (PHP only). */
+  autowire: AutowireReferences;
 }
 
 interface AnalyzedServicesYaml {
@@ -82,6 +86,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       trees: new DocumentTrees(parsers),
       templateReferences: new TemplateReferenceFinder(parsers),
       routeReferences: new RouteReferenceFinder(parsers),
+      autowireReferences: new AutowireReferenceFinder(parsers),
     };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
@@ -91,7 +96,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
       hoverProvider: true,
-      completionProvider: { triggerCharacters: ["'", '"', '/', '@'] },
+      completionProvider: { triggerCharacters: ["'", '"', '/', '@', '%'] },
     },
     serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
   };
@@ -139,7 +144,9 @@ connection.onDefinition((params) => {
     const { document, context } = analyzed;
     return (
       provideTemplateDefinition(document, params.position, analyzed.templates, context.templates.resolver) ??
-      provideRouteDefinition(document, params.position, analyzed.routes, context.routes)
+      provideRouteDefinition(document, params.position, analyzed.routes, context.routes) ??
+      provideServiceDefinition(document, params.position, analyzed.autowire.services, context.services) ??
+      provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services)
     );
   } catch (error) {
     connection.console.error(`[Definition] ${formatError(error)}`);
@@ -172,7 +179,9 @@ connection.onCompletion((params) => {
     return (
       provideTemplateCompletion(document, params.position, analyzed.templates, context.templates.index.templates(), context.project.root) ??
       provideRouteNameCompletion(document, params.position, analyzed.routes, context.routes.visibleRoutes()) ??
-      provideRouteParameterCompletion(document, params.position, analyzed.routes, context.routes)
+      provideRouteParameterCompletion(document, params.position, analyzed.routes, context.routes) ??
+      provideServiceCompletion(document, params.position, analyzed.autowire.services, context.services.visibleServices()) ??
+      provideParameterCompletion(document, params.position, analyzed.autowire.parameters, context.services.visibleParameters())
     );
   } catch (error) {
     connection.console.error(`[Completion] ${formatError(error)}`);
@@ -270,6 +279,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     context,
     templates: parsing.templateReferences.find(language, tree.rootNode),
     routes: parsing.routeReferences.find(language, tree.rootNode),
+    autowire: language === 'php' ? parsing.autowireReferences.find(tree.rootNode) : { services: [], parameters: [] },
   };
 }
 

@@ -9,8 +9,9 @@ import { fixtureApp } from '../helpers';
 const fixtureCache = path.join(fixtureApp, 'var', 'cache', 'dev');
 
 describe('parseContainerXml', () => {
-  const services = parseContainerXml(fs.readFileSync(path.join(fixtureCache, 'App_KernelDevDebugContainer.xml'), 'utf8'))!;
+  const { services, parameters } = parseContainerXml(fs.readFileSync(path.join(fixtureCache, 'App_KernelDevDebugContainer.xml'), 'utf8'))!;
   const byId = new Map(services.map((service) => [service.id, service]));
+  const byName = new Map(parameters.map((parameter) => [parameter.name, parameter]));
 
   it('reads the top-level services with their class', () => {
     expect(byId.get('App\\Service\\Mailer')).toEqual({ id: 'App\\Service\\Mailer', class: 'App\\Service\\Mailer', alias: null, location: null });
@@ -33,11 +34,21 @@ describe('parseContainerXml', () => {
     expect(byId.has('.service_locator.Xyz123')).toBe(true);
   });
 
+  it('reads the top-level parameters, collections without value', () => {
+    expect(byName.get('kernel.project_dir')).toEqual({ name: 'kernel.project_dir', value: '/var/www/html', location: null });
+    expect(byName.get('kernel.secret')?.value).toBe('%env(APP_SECRET)%');
+    expect(byName.get('app.empty')?.value).toBe('');
+    expect(byName.get('kernel.enabled_locales')?.value).toBeNull();
+    expect(byName.has('FrameworkBundle')).toBe(false);
+    expect(byName.has('.kernel.bundles_definition')).toBe(true);
+  });
+
   it('handles a container with a single service or none', () => {
-    expect(parseContainerXml('<container><services><service id="a" class="A\\B"/></services></container>')).toEqual([
-      { id: 'a', class: 'A\\B', alias: null, location: null },
-    ]);
-    expect(parseContainerXml('<container><services/></container>')).toEqual([]);
+    expect(parseContainerXml('<container><services><service id="a" class="A\\B"/></services></container>')).toEqual({
+      services: [{ id: 'a', class: 'A\\B', alias: null, location: null }],
+      parameters: [],
+    });
+    expect(parseContainerXml('<container><services/></container>')).toEqual({ services: [], parameters: [] });
   });
 
   it('rejects what is not a dumped container', () => {

@@ -12,6 +12,8 @@ Pensée d'abord pour Windows, fonctionne aussi sous macOS et Linux.
 > - **Routes** : navigation, complétion, survol et diagnostic des noms de routes dans `path()`, `url()`,
 >   `redirectToRoute()`, `generateUrl()`, et complétion de leurs paramètres. Les routes de bundles et le
 >   diagnostic nécessitent le cache `var/cache/dev/` (généré par Symfony dans le conteneur).
+> - **Services** (en cours) : navigation et complétion des `'@service_id'` dans `config/services.yaml`,
+>   à partir du container compilé `var/cache/dev/*Container.xml` et des services déclarés dans le YAML.
 
 ## Prérequis
 
@@ -53,6 +55,28 @@ Pensée d'abord pour Windows, fonctionne aussi sous macOS et Linux.
 
 Après une modification du serveur : `npm run build`, puis palette → `editor: restart language server`.
 
+## Cohabitation avec les autres serveurs
+
+`symfony-zed` complète les serveurs de langage existants (Intelephense ou Phpactor pour PHP,
+yaml-language-server pour YAML), il ne les remplace pas. Il ne répond qu'aux positions Symfony
+(nom de template, de route ou de service dans une chaîne littérale) et renvoie un résultat vide
+partout ailleurs. Il n'expose ni formatage, ni renommage, ni code actions.
+
+Zed lance tous les serveurs déclarés pour un langage. Si la navigation Symfony ne répond pas
+alors qu'un autre serveur est actif, placer `symfony-zed` en premier :
+
+```json
+{
+  "languages": {
+    "PHP": { "language_servers": ["symfony-zed", "..."] },
+    "Twig": { "language_servers": ["symfony-zed", "..."] },
+    "YAML": { "language_servers": ["symfony-zed", "..."] }
+  }
+}
+```
+
+`"..."` désigne les autres serveurs activés par défaut.
+
 ## Détection du projet
 
 Un dossier est une racine Symfony s'il contient `composer.json` et `bin/console`
@@ -69,3 +93,34 @@ npm test         # vitest
 npm run watch    # rebuild automatique
 cargo check      # depuis la racine, vérifie l'extension Rust
 ```
+
+## Roadmap
+
+| Phase | Contenu | Statut |
+|---|---|---|
+| 0 | Squelette : extension Zed, serveur LSP, détection du projet | Fait (installation sous Windows à valider) |
+| 1 | Templates : navigation, complétion, diagnostic | Fait |
+| 2 | Routes : navigation, complétion, survol, paramètres, diagnostic | Fait |
+| 3 | Services : IDs dans le YAML, `#[Autowire]`, survol, diagnostic | En cours |
+| 4 | Traductions : `trans()`, `\|trans`, `{% trans %}`, clés manquantes | Prévu |
+| 5 | Doctrine et Forms : repositories, champs d'entité | Prévu |
+| 6 | Paramètres `%param%` et variables d'environnement `%env()%` | Prévu |
+| 7 | Messenger et Event Dispatcher : handlers, listeners, subscribers | Prévu |
+| 8 | Sécurité : `security.yaml` | Prévu |
+| 9 | Publication : paquet npm, registre des extensions Zed | Prévu |
+
+Le détail de chaque phase est dans [CLAUDE.md](CLAUDE.md).
+
+## Références
+
+- [Zed : extensions](https://zed.dev/docs/extensions)
+- [Zed : langages](https://zed.dev/docs/languages)
+- [Registre des extensions Zed](https://github.com/zed-industries/extensions)
+- [Spécification du Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
+- [Documentation Symfony](https://symfony.com/doc/current/index.html)
+- [Documentation Composer](https://getcomposer.org/doc/)
+- [Symfony Plugin pour PhpStorm](https://github.com/Haehnchen/idea-php-symfony2-plugin) (inspiration)
+
+## Licence
+
+À choisir avant la première publication.
