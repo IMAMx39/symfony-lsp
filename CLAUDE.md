@@ -195,7 +195,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 ### Phase 2 : routes
 - [x] Definition + completion : `path()`, `url()` (Twig), `redirectToRoute()`, `generateUrl()` (PHP)
 - [x] Hover : chemin, méthodes HTTP, contrôleur
-- [ ] Completion des paramètres de route
+- [x] Completion des paramètres de route
 - [ ] Diagnostic : route inconnue
 
 ### Phase 3 : services

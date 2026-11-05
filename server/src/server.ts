@@ -11,6 +11,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { provideRouteNameCompletion } from './features/routes/completion';
 import { provideRouteDefinition } from './features/routes/definition';
 import { provideRouteHover } from './features/routes/hover';
+import { provideRouteParameterCompletion } from './features/routes/parameterCompletion';
 import { RouteReferenceFinder, type RouteReference } from './features/routes/RouteReferenceFinder';
 import { provideTemplateCompletion } from './features/templates/completion';
 import { provideTemplateDefinition } from './features/templates/definition';
@@ -147,7 +148,8 @@ connection.onCompletion((params) => {
     const { document, context } = analyzed;
     return (
       provideTemplateCompletion(document, params.position, analyzed.templates, context.templates.index.templates(), context.project.root) ??
-      provideRouteNameCompletion(document, params.position, analyzed.routes, context.routes.visibleRoutes())
+      provideRouteNameCompletion(document, params.position, analyzed.routes, context.routes.visibleRoutes()) ??
+      provideRouteParameterCompletion(document, params.position, analyzed.routes, context.routes)
     );
   } catch (error) {
     connection.console.error(`[Completion] ${formatError(error)}`);
