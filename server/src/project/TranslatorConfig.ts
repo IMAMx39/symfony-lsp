@@ -21,6 +21,8 @@ export class TranslatorConfig {
     readonly dirs: readonly string[],
     /** Problems worth logging (unreadable files, unresolved parameters). */
     readonly warnings: readonly string[],
+    /** False when part of the configuration cannot be read (PHP config, invalid YAML, unresolved path). */
+    readonly complete: boolean,
   ) {}
 
   static load(projectRoot: string, env: string): TranslatorConfig {
@@ -29,18 +31,21 @@ export class TranslatorConfig {
     let enabled = true;
     let defaultPath: unknown = DEFAULT_PATH;
     let paths: unknown[] = [];
+    let complete = true;
 
     const packagesDir = path.join(projectRoot, 'config', 'packages');
     for (const name of ['framework.php', 'translation.php']) {
       for (const phpConfig of [path.join(packagesDir, name), path.join(packagesDir, env, name)]) {
         if (fs.existsSync(phpConfig)) {
           warnings.push(`${phpConfig} is not read: PHP configuration requires running PHP`);
+          complete = false;
         }
       }
     }
     const configs = readPackageConfigs(projectRoot, env);
     for (const { file, message } of configs.invalid) {
       warnings.push(`Cannot parse ${file}: ${message}`);
+      complete = false;
     }
     for (const { content } of configs.blocks) {
       const framework = content['framework'];
@@ -76,11 +81,12 @@ export class TranslatorConfig {
         const dir = resolveConfigPath(rawPath, projectRoot);
         if (dir === null) {
           warnings.push(`Unresolved translator path ${String(rawPath)}`);
+          complete = false;
         } else if (!dirs.includes(dir)) {
           dirs.push(dir);
         }
       }
     }
-    return new TranslatorConfig(defaultLocale, dirs, warnings);
+    return new TranslatorConfig(defaultLocale, dirs, warnings, complete);
   }
 }

@@ -249,7 +249,8 @@ Vérifié dans FrameworkBundle / Translation / TwigBridge 7.4 (`FrameworkExtensi
 `Translator`, `YamlFileLoader`, `ArrayLoader`, `XliffFileLoader`, `TransNode`, `TranslationDefaultDomainNodeVisitor`).
 
 `TranslationIndex` lit les dossiers du projet dans l'ordre de `FrameworkExtension` : `translator.paths`, puis
-`default_path` (le suivant l'emporte). Les dossiers des composants et des bundles ne sont **pas** lus. Config lue
+`default_path` (le suivant l'emporte). Les dossiers des composants et des bundles ne sont **pas** parsés (seuls
+leurs noms de fichiers comptent, voir le diagnostic). Config lue
 comme pour Twig (YAML de `config/packages/` puis `dev/`, chacun suivi de `when@dev` ; `framework.php` et
 `translation.php` signalés, non lus ; `translator: false` / `enabled: false` → aucun dossier).
 - Nom de fichier : `domaine.locale.format`, domaine pouvant contenir des points, au moins deux points ;
@@ -272,6 +273,18 @@ Complétion : clés du domaine (toutes locales), valeur de la locale par défaut
 demanderaient un échappement (guillemet, `\`, interpolation, `%%` ou délimiteur Twig dans un tag) sont omises.
 Watchers : `**/translations/**/*.{yaml,yml,xlf,xliff}` (un `translator.paths` hors d'un dossier `translations/`
 n'est pas surveillé).
+
+Diagnostic « traduction introuvable » (Warning, code `translation-not-found`) : clé littérale absente de la
+locale par défaut et de ses parents (`fr` pour `fr_FR`), seulement si `TranslationIndex.isCertain(domaine)` :
+- config du traducteur entièrement lue (pas de `framework.php` / `translation.php`, YAML de `config/packages`
+  valides, chemins résolus) ;
+- `vendor/composer/installed.json` présent et chaque bundle activé localisé ; aucun fichier `domaine.<locale>.*`
+  du catalogue dans les dossiers que `FrameworkExtension` scanne aussi (`Resources/translations` de
+  symfony/validator, form, security-core ; `Resources/translations` ou `translations` des bundles) ;
+- dans le projet : au moins un fichier du domaine pour la locale par défaut (sinon les clés sont sans doute le
+  texte source), tous valides, et aucun dans un format non lu (php, json…).
+Domaine inconnu, clé vide ou dynamique : aucun diagnostic. Un fichier de traduction modifié (disque ou document
+ouvert) revalide les documents du projet ; `bundles.php`, `composer.json` et `installed.json` rechargent la config.
 
 ---
 
@@ -306,7 +319,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 
 ### Phase 4 : traductions
 - [x] Definition + completion : `trans()`, `|trans`, `{% trans %}`
-- [ ] Diagnostic : clé manquante dans la locale par défaut
+- [x] Diagnostic : clé manquante dans la locale par défaut
 
 ### Phase 5 : Doctrine et Forms
 - [ ] `getRepository(Entity::class)` → repository

@@ -17,7 +17,7 @@ let index: TranslationIndex;
 beforeAll(async () => {
   parsers = await loadParsers();
   finder = new TranslationReferenceFinder(parsers);
-  index = new TranslationIndex(fixtureApp);
+  index = new TranslationIndex(fixtureApp, parsers);
 });
 
 /** Twig filters need `|`: the cursor marker is `¦`. */
@@ -130,7 +130,7 @@ describe('translation completion', () => {
   });
 
   it('leaves out keys that would need escaping', () => {
-    const local = new TranslationIndex(fixtureApp);
+    const local = new TranslationIndex(fixtureApp, parsers);
     const keys = ["it's", 'a\\b', '$x', '100%%', 'plain'];
     // Single-quoted YAML scalars: only `'` needs escaping (as `''`).
     const yaml = keys.map((key) => `'${key.replace(/'/g, "''")}': x\n`).join('');

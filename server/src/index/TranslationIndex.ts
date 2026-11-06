@@ -2,6 +2,8 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { Location, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import type { Parsers } from '../parsing/parsers';
+import { externalTranslationDirs, type ExternalTranslationDirs } from '../project/externalTranslationDirs';
 import { TranslatorConfig } from '../project/TranslatorConfig';
 import { parseTranslationFile, parseTranslationFileName, type TranslationMessage } from '../translations/translationFiles';
 import { isInsidePath, pathKey, pathToUri } from '../util/paths';
@@ -30,6 +32,8 @@ interface IndexedFile {
   /** Index of the scanned directory: a higher one overrides a lower one. */
   priority: number;
   messages: TranslationMessage[];
+  /** False when the current content is invalid (the messages are the last valid ones, if any). */
+  valid: boolean;
   uri: string;
   text: TextDocument;
 }
@@ -38,14 +42,25 @@ interface IndexedFile {
  * Translation messages of the project directories FrameworkBundle scans (translator.paths, then
  * default_path, recursively), read from the YAML and XLIFF files named `domain.locale.format`.
  * Open documents can override their file (updateFile). Bundle and component translations are
- * not read.
+ * not read: only the domains and locales they provide are known (isCertain).
  */
 export class TranslationIndex {
   private config: TranslatorConfig;
+  private external: ExternalTranslationDirs;
   private readonly files = new Map<string, IndexedFile>();
+  /** `domain/locale` of the files of the project directories in a format that is not read. */
+  private readonly unread = new Map<string, string>();
+  /** `domain/locale` of the files of component and bundle directories. */
+  private externalCatalogues = new Set<string>();
+  /** Keys of the default locale (and its parents) by domain, rebuilt after a change. */
+  private defaultKeys: Map<string, Set<string>> | null = null;
 
-  constructor(private readonly projectRoot: string) {
+  constructor(
+    private readonly projectRoot: string,
+    private readonly parsers: Parsers,
+  ) {
     this.config = TranslatorConfig.load(projectRoot, TRANSLATIONS_ENV);
+    this.external = externalTranslationDirs(projectRoot, TRANSLATIONS_ENV, parsers);
     this.scan();
   }
 
@@ -54,7 +69,42 @@ export class TranslationIndex {
   }
 
   get warnings(): readonly string[] {
-    return this.config.warnings;
+    return [...this.config.warnings, ...this.external.warnings];
+  }
+
+  /**
+   * True when a key missing from the default locale of a domain is really missing: the whole
+   * configuration is read, every bundle is located, no component or bundle provides this
+   * catalogue, and the project has at least one file for it, all of them valid and readable.
+   * Without any project file for the catalogue, keys are likely the source text itself.
+   */
+  isCertain(domain: string): boolean {
+    if (!this.config.complete || !this.external.complete) {
+      return false;
+    }
+    const catalogues = localeChain(this.defaultLocale).map((locale) => catalogue(domain, locale));
+    const unread = [...this.unread.values()];
+    if (catalogues.some((name) => this.externalCatalogues.has(name) || unread.includes(name))) {
+      return false;
+    }
+    const files = [...this.files.values()].filter((file) => catalogues.includes(catalogue(file.domain, file.locale)));
+    return files.length > 0 && files.every((file) => file.valid);
+  }
+
+  /** True when the key is translated in the default locale (or a parent: `fr` for `fr_FR`). */
+  hasDefaultTranslation(domain: string, key: string): boolean {
+    if (this.defaultKeys === null) {
+      const locales = localeChain(this.defaultLocale);
+      this.defaultKeys = new Map();
+      for (const file of this.files.values()) {
+        if (locales.includes(file.locale)) {
+          const keys = this.defaultKeys.get(file.domain) ?? new Set<string>();
+          file.messages.forEach((message) => keys.add(message.key));
+          this.defaultKeys.set(file.domain, keys);
+        }
+      }
+    }
+    return this.defaultKeys.get(domain)?.has(key) ?? false;
   }
 
   /** Number of messages indexed, every domain and locale included. */
@@ -117,7 +167,10 @@ export class TranslationIndex {
   /** Configuration changed (config/packages): directories and default locale may differ. */
   reloadConfig(): void {
     this.config = TranslatorConfig.load(this.projectRoot, TRANSLATIONS_ENV);
+    this.external = externalTranslationDirs(this.projectRoot, TRANSLATIONS_ENV, this.parsers);
     this.files.clear();
+    this.unread.clear();
+    this.defaultKeys = null;
     this.scan();
   }
 
@@ -138,14 +191,19 @@ export class TranslationIndex {
     }
     const key = pathKey(file);
     const source = content ?? readText(file);
+    this.defaultKeys = null;
     if (source === null) {
       this.files.delete(key);
       return true;
     }
     const messages = parseTranslationFile(source, described.format);
-    if (messages !== null) {
+    const previous = this.files.get(key);
+    if (messages === null && previous !== undefined) {
+      previous.valid = false;
+    } else {
       const uri = pathToUri(file);
-      this.files.set(key, { ...described, file, messages, uri, text: TextDocument.create(uri, described.format, 0, source) });
+      const text = TextDocument.create(uri, described.format, 0, source);
+      this.files.set(key, { ...described, file, messages: messages ?? [], valid: messages !== null, uri, text });
     }
     return true;
   }
@@ -167,10 +225,38 @@ export class TranslationIndex {
   private scan(): void {
     for (const dir of this.config.dirs) {
       for (const file of listFiles(dir)) {
-        this.updateFile(file, null);
+        const name = parseTranslationFileName(path.basename(file));
+        if (name !== null && name.format === null) {
+          this.unread.set(pathKey(file), catalogue(name.domain, name.locale));
+        } else {
+          this.updateFile(file, null);
+        }
+      }
+    }
+    this.externalCatalogues = new Set();
+    for (const dir of this.external.dirs) {
+      for (const file of listFiles(dir)) {
+        const name = parseTranslationFileName(path.basename(file));
+        if (name !== null) {
+          this.externalCatalogues.add(catalogue(name.domain, name.locale));
+        }
       }
     }
   }
+}
+
+function catalogue(domain: string, locale: string): string {
+  return `${domain}/${locale}`;
+}
+
+/** A locale and its parents, as Translator::computeFallbackLocales() derives them (`fr_FR` -> `fr`). */
+function localeChain(locale: string): string[] {
+  const chain = [locale];
+  for (let current = locale; current.includes('_'); ) {
+    current = current.slice(0, current.lastIndexOf('_'));
+    chain.push(current);
+  }
+  return chain;
 }
 
 function compareOrder(a: [number, string], b: [number, string]): number {

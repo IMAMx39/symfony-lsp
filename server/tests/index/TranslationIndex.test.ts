@@ -1,16 +1,22 @@
 import * as path from 'node:path';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 import { TranslationIndex } from '../../src/index/TranslationIndex';
+import type { Parsers } from '../../src/parsing/parsers';
 import { uriToPath } from '../../src/util/paths';
-import { fixtureApp } from '../helpers';
+import { fixtureApp, loadParsers } from '../helpers';
 
 const relative = (uri: string): string => path.relative(fixtureApp, uriToPath(uri)).split(path.sep).join('/');
 
 describe('TranslationIndex', () => {
+  let parsers: Parsers;
   let index: TranslationIndex;
 
+  beforeAll(async () => {
+    parsers = await loadParsers();
+  });
+
   beforeEach(() => {
-    index = new TranslationIndex(fixtureApp);
+    index = new TranslationIndex(fixtureApp, parsers);
   });
 
   it('lists the definitions of a key, default locale first', () => {

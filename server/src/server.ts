@@ -25,6 +25,7 @@ import { provideTemplateDiagnostics } from './features/templates/diagnostics';
 import { TemplateReferenceFinder, type TemplateReference } from './features/templates/TemplateReferenceFinder';
 import { provideTranslationCompletion } from './features/translations/completion';
 import { provideTranslationDefinition } from './features/translations/definition';
+import { provideTranslationDiagnostics } from './features/translations/diagnostics';
 import { TranslationReferenceFinder, type TranslationReference } from './features/translations/TranslationReferenceFinder';
 import { RouteIndex, routeFileKind } from './index/RouteIndex';
 import { SERVICES_ENV, ServiceIndex, serviceFileKind } from './index/ServiceIndex';
@@ -128,7 +129,7 @@ connection.onInitialized(() => {
       const routes = buildRoutes(project);
       const services = buildServices(project);
       const translations = buildTranslations(project);
-      if (templates !== null && routes !== null && services !== null) {
+      if (templates !== null && routes !== null && services !== null && translations !== null) {
         projects.push({ project, templates, routes, services, translations, reloadTimers: new Map() });
       }
     }
@@ -240,9 +241,8 @@ connection.onDidChangeWatchedFiles((params) => {
       } else if (file.endsWith('.twig') && context.templates.index.refresh(file)) {
         touched.add(context);
       }
-      if (!openDocumentFor(file)) {
-        // Translation files: no diagnostics depend on them yet.
-        context.translations.updateFile(file, null);
+      if (!openDocumentFor(file) && context.translations.updateFile(file, null)) {
+        touched.add(context);
       }
 
       switch (routeFileKind(file, context.project.root)) {
@@ -293,10 +293,14 @@ documents.onDidClose((event) => {
   void connection.sendDiagnostics({ uri, diagnostics: [] });
   // Back to the file on disk (unsaved changes are discarded).
   const context = projectFor(uri);
-  context?.services.updateYamlFile(uriToPath(uri), null);
-  context?.translations.updateFile(uriToPath(uri), null);
-  if (context?.routes.updatePhpFile(uriToPath(uri), null)) {
-    revalidateProject(context);
+  if (context) {
+    const file = uriToPath(uri);
+    context.services.updateYamlFile(file, null);
+    const routesChanged = context.routes.updatePhpFile(file, null);
+    const translationsChanged = context.translations.updateFile(file, null);
+    if (routesChanged || translationsChanged) {
+      revalidateProject(context);
+    }
   }
 });
 
@@ -357,7 +361,9 @@ function refreshDocument(uri: string): void {
     if (context.services.updateYamlFile(uriToPath(uri), document.getText())) {
       revalidateProject(context, uri);
     }
-    context.translations.updateFile(uriToPath(uri), document.getText());
+    if (context.translations.updateFile(uriToPath(uri), document.getText())) {
+      revalidateProject(context, uri);
+    }
     publishDiagnostics(uri);
   } catch (error) {
     connection.console.error(`[Diagnostics] ${formatError(error)}`);
@@ -382,6 +388,7 @@ function publishDiagnostics(uri: string): void {
     ...provideTemplateDiagnostics(document, analyzed.templates, resolver, (namespace) => loaderPaths.isCertain(namespace)),
     ...provideRouteDiagnostics(document, analyzed.routes, context.routes),
     ...provideServiceDiagnostics(document, analyzed.autowire.services, context.services),
+    ...provideTranslationDiagnostics(document, analyzed.translations, context.translations),
   ];
   void connection.sendDiagnostics({ uri, version: document.version, diagnostics });
 }
@@ -451,15 +458,18 @@ function buildServices(project: SymfonyProject): ServiceIndex | null {
   return services;
 }
 
-function buildTranslations(project: SymfonyProject): TranslationIndex {
-  const translations = new TranslationIndex(project.root);
+function buildTranslations(project: SymfonyProject): TranslationIndex | null {
+  if (parsing === null) {
+    return null;
+  }
+  const translations = new TranslationIndex(project.root, parsing.parsers);
   logTranslations(translations);
   return translations;
 }
 
 function logTranslations(translations: TranslationIndex): void {
   for (const warning of translations.warnings) {
-    connection.console.warn(`[TranslatorConfig] ${warning}`);
+    connection.console.warn(`[TranslationIndex] ${warning}`);
   }
   connection.console.info(
     `[TranslationIndex] ${translations.size()} messages indexed (default locale: ${translations.defaultLocale})`,
