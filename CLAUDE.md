@@ -34,17 +34,21 @@ symfony-zed/
 │   │   │   ├── SymfonyProject.ts   # Détection projet, racine
 │   │   │   ├── ComposerAutoload.ts # PSR-4 de composer.json + vendor/composer/installed.json
 │   │   │   ├── bundles.ts          # Bundles activés (bundles.php), racine d'un bundle
+│   │   │   ├── packageConfig.ts    # Lecture des YAML de config/packages (+ dev/, when@dev)
 │   │   │   ├── TwigConfig.ts       # Lecture twig.yaml (default_path, paths, when@dev)
+│   │   │   ├── TranslatorConfig.ts # framework.default_locale, translator.paths / default_path
 │   │   │   ├── TwigLoaderPaths.ts  # Dossiers par namespace, dans l'ordre de TwigBundle
 │   │   │   ├── TemplateResolver.ts # Nom de template → fichier
 │   │   │   ├── ProjectTemplates.ts # Regroupe chemins, résolveur et index d'un projet
 │   │   │   └── classLocation.ts    # Classe (ou méthode) → emplacement, via PSR-4
 │   │   ├── routing/                # Extraction des routes : #[Route], YAML, cache compilé
 │   │   ├── services/               # Container XML compilé, services et références `@id` du YAML
+│   │   ├── translations/           # Noms de fichiers domaine.locale.format, messages YAML et XLIFF
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
 │   │   │   ├── RouteIndex.ts
-│   │   │   └── ServiceIndex.ts
+│   │   │   ├── ServiceIndex.ts
+│   │   │   └── TranslationIndex.ts
 │   │   ├── parsing/
 │   │   │   ├── parsers.ts          # Init web-tree-sitter (PHP, Twig)
 │   │   │   ├── DocumentTrees.ts    # Arbres des documents ouverts (cache par version)
@@ -53,13 +57,14 @@ symfony-zed/
 │   │   ├── features/               # Un dossier par fonctionnalité
 │   │   │   ├── templates/          # definition, completion, diagnostics
 │   │   │   ├── routes/             # definition, completion, hover, paramètres, diagnostics
-│   │   │   └── services/           # definition, completion, hover, diagnostics (YAML, #[Autowire])
+│   │   │   ├── services/           # definition, completion, hover, diagnostics (YAML, #[Autowire])
+│   │   │   └── translations/       # definition, completion (trans(), |trans, {% trans %})
 │   │   └── util/
 │   │       └── paths.ts            # Normalisation chemins/URI cross-platform
 │   └── tests/
 │       ├── fixtures/symfony-app/   # Mini projet Symfony réaliste
 │       ├── features/               # Tests par fonctionnalité
-│       ├── index/ project/ routing/ services/ util/
+│       ├── index/ project/ routing/ services/ translations/ util/
 └── CLAUDE.md
 ```
 
@@ -120,7 +125,7 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 | Overrides de bundles | `<default_path>/bundles/<NomBundle>/...` (prioritaires sur le bundle) |
 | Services | `var/cache/dev/App_KernelDevDebugContainer.xml` (glob `*Container.xml`, le plus récent gagne), puis clés explicites de `config/services.yaml` et `config/services_dev.yaml` |
 | Routes | Attributs `#[Route]` dans `src/Controller/**`, fichiers `config/routes/*.yaml`, et `var/cache/dev/url_generating_routes.php` si présent |
-| Traductions | `translations/*.{yaml,xlf}` (domaine et locale déduits du nom de fichier) |
+| Traductions | Dossiers `translator.paths` puis `translator.default_path` (défaut `translations/`), récursivement : fichiers `domaine.locale.{yaml,yml,xlf,xliff}` ; locale par défaut `framework.default_locale` (défaut `en`) |
 | Entités Doctrine | Attributs `#[ORM\Entity]` dans `src/Entity/**` |
 
 ### Résolution des noms de templates
@@ -238,6 +243,36 @@ sur un paramètre non typé, nullable (`?T`, `T|null`, `mixed`) ou avec valeur p
 `resource:` depuis le dernier dump). Limite connue : un service supprimé des sources mais encore
 dans un dump récent reste « connu ».
 
+### Traductions
+
+Vérifié dans FrameworkBundle / Translation / TwigBridge 7.4 (`FrameworkExtension::registerTranslatorConfiguration`,
+`Translator`, `YamlFileLoader`, `ArrayLoader`, `XliffFileLoader`, `TransNode`, `TranslationDefaultDomainNodeVisitor`).
+
+`TranslationIndex` lit les dossiers du projet dans l'ordre de `FrameworkExtension` : `translator.paths`, puis
+`default_path` (le suivant l'emporte). Les dossiers des composants et des bundles ne sont **pas** lus. Config lue
+comme pour Twig (YAML de `config/packages/` puis `dev/`, chacun suivi de `when@dev` ; `framework.php` et
+`translation.php` signalés, non lus ; `translator: false` / `enabled: false` → aucun dossier).
+- Nom de fichier : `domaine.locale.format`, domaine pouvant contenir des points, au moins deux points ;
+  suffixe `+intl-icu` retiré du domaine. Formats lus : YAML et XLIFF ; les autres (php, json, csv…) sont ignorés.
+- YAML : clés imbriquées jointes par `.`, valeurs `null` ignorées, séquences ignorées (pas de nœud de clé).
+- XLIFF 1.2 : clé = `resname` non vide, sinon `<source>` ; XLIFF 2.0 : clé = `name` de l'`<unit>`, sinon
+  `<source>` du `<segment>`. Commentaires ignorés, entités et CDATA décodés, source contenant du balisage ignorée.
+  Emplacements trouvés par analyse du texte (fast-xml-parser ne fournit pas de positions, il sert à valider).
+- Un document ouvert remplace son fichier ; un contenu invalide garde les messages précédents.
+
+Positions reconnues : premier argument littéral de `->trans()` (PHP, quel que soit l'objet ; `id:` nommé
+accepté), objet littéral du filtre `|trans`, corps texte de `{% trans %}…{% endtrans %}` (clé = corps
+`trim()` avec `%%` → `%`, comme `TransNode`). Pas `t()` ni `TranslatableMessage`.
+Domaine : argument littéral (`domain:` nommé, 3ᵉ positionnel en PHP, 2ᵉ en Twig, `from` du tag ; `null` →
+`messages`), sinon `{% trans_default_domain %}`, sinon `messages`. `trans_default_domain` n'est suivi que s'il
+est unique, littéral, au niveau racine du template, et pour les nœuds situés après lui hors `{% embed %}` ;
+sinon domaine inconnu → aucune réponse. Domaine non littéral, dépaquetage `...$args` : aucune réponse.
+Définition : la clé dans chaque fichier qui la définit, locale par défaut d'abord, puis par priorité.
+Complétion : clés du domaine (toutes locales), valeur de la locale par défaut en détail ; les clés qui
+demanderaient un échappement (guillemet, `\`, interpolation, `%%` ou délimiteur Twig dans un tag) sont omises.
+Watchers : `**/translations/**/*.{yaml,yml,xlf,xliff}` (un `translator.paths` hors d'un dossier `translations/`
+n'est pas surveillé).
+
 ---
 
 ## Roadmap
@@ -270,7 +305,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Diagnostic : service inconnu (uniquement si le container compilé est présent et la config lisible)
 
 ### Phase 4 : traductions
-- [ ] Definition + completion : `trans()`, `|trans`, `{% trans %}`
+- [x] Definition + completion : `trans()`, `|trans`, `{% trans %}`
 - [ ] Diagnostic : clé manquante dans la locale par défaut
 
 ### Phase 5 : Doctrine et Forms

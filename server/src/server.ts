@@ -23,8 +23,12 @@ import { provideTemplateCompletion } from './features/templates/completion';
 import { provideTemplateDefinition } from './features/templates/definition';
 import { provideTemplateDiagnostics } from './features/templates/diagnostics';
 import { TemplateReferenceFinder, type TemplateReference } from './features/templates/TemplateReferenceFinder';
+import { provideTranslationCompletion } from './features/translations/completion';
+import { provideTranslationDefinition } from './features/translations/definition';
+import { TranslationReferenceFinder, type TranslationReference } from './features/translations/TranslationReferenceFinder';
 import { RouteIndex, routeFileKind } from './index/RouteIndex';
 import { SERVICES_ENV, ServiceIndex, serviceFileKind } from './index/ServiceIndex';
+import { TranslationIndex } from './index/TranslationIndex';
 import { DocumentTrees, languageOf } from './parsing/DocumentTrees';
 import { bundledGrammarFiles, Parsers } from './parsing/parsers';
 import { ProjectTemplates } from './project/ProjectTemplates';
@@ -43,6 +47,7 @@ interface ProjectContext {
   templates: ProjectTemplates;
   routes: RouteIndex;
   services: ServiceIndex;
+  translations: TranslationIndex;
   reloadTimers: Map<string, NodeJS.Timeout>;
 }
 
@@ -52,6 +57,7 @@ interface ParsingContext {
   templateReferences: TemplateReferenceFinder;
   routeReferences: RouteReferenceFinder;
   autowireReferences: AutowireReferenceFinder;
+  translationReferences: TranslationReferenceFinder;
 }
 
 interface AnalyzedDocument {
@@ -61,6 +67,7 @@ interface AnalyzedDocument {
   routes: RouteReference[];
   /** `#[Autowire]` references (PHP only). */
   autowire: AutowireReferences;
+  translations: TranslationReference[];
 }
 
 interface AnalyzedServicesYaml {
@@ -89,6 +96,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       templateReferences: new TemplateReferenceFinder(parsers),
       routeReferences: new RouteReferenceFinder(parsers),
       autowireReferences: new AutowireReferenceFinder(parsers),
+      translationReferences: new TranslationReferenceFinder(parsers),
     };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
@@ -119,8 +127,9 @@ connection.onInitialized(() => {
       const templates = buildTemplates(project);
       const routes = buildRoutes(project);
       const services = buildServices(project);
+      const translations = buildTranslations(project);
       if (templates !== null && routes !== null && services !== null) {
-        projects.push({ project, templates, routes, services, reloadTimers: new Map() });
+        projects.push({ project, templates, routes, services, translations, reloadTimers: new Map() });
       }
     }
     if (projects.length > 0) {
@@ -150,6 +159,7 @@ connection.onDefinition((params) => {
     return (
       provideTemplateDefinition(document, params.position, analyzed.templates, context.templates.resolver) ??
       provideRouteDefinition(document, params.position, analyzed.routes, context.routes) ??
+      provideTranslationDefinition(document, params.position, analyzed.translations, context.translations) ??
       provideServiceDefinition(document, params.position, analyzed.autowire.services, context.services) ??
       provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services)
     );
@@ -197,6 +207,7 @@ connection.onCompletion((params) => {
       provideTemplateCompletion(document, params.position, analyzed.templates, context.templates.index.templates(), context.project.root) ??
       provideRouteNameCompletion(document, params.position, analyzed.routes, context.routes.visibleRoutes()) ??
       provideRouteParameterCompletion(document, params.position, analyzed.routes, context.routes) ??
+      provideTranslationCompletion(document, params.position, analyzed.translations, context.translations) ??
       provideServiceCompletion(document, params.position, analyzed.autowire.services, context.services.visibleServices()) ??
       provideParameterCompletion(document, params.position, analyzed.autowire.parameters, context.services.visibleParameters())
     );
@@ -222,8 +233,16 @@ connection.onDidChangeWatchedFiles((params) => {
             context.templates = templates;
           }
         });
+        scheduleReload(context, 'translator-config', () => {
+          context.translations.reloadConfig();
+          logTranslations(context.translations);
+        });
       } else if (file.endsWith('.twig') && context.templates.index.refresh(file)) {
         touched.add(context);
+      }
+      if (!openDocumentFor(file)) {
+        // Translation files: no diagnostics depend on them yet.
+        context.translations.updateFile(file, null);
       }
 
       switch (routeFileKind(file, context.project.root)) {
@@ -275,6 +294,7 @@ documents.onDidClose((event) => {
   // Back to the file on disk (unsaved changes are discarded).
   const context = projectFor(uri);
   context?.services.updateYamlFile(uriToPath(uri), null);
+  context?.translations.updateFile(uriToPath(uri), null);
   if (context?.routes.updatePhpFile(uriToPath(uri), null)) {
     revalidateProject(context);
   }
@@ -297,6 +317,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     templates: parsing.templateReferences.find(language, tree.rootNode),
     routes: parsing.routeReferences.find(language, tree.rootNode),
     autowire: language === 'php' ? parsing.autowireReferences.find(tree.rootNode) : { services: [], parameters: [] },
+    translations: parsing.translationReferences.find(language, tree.rootNode),
   };
 }
 
@@ -336,6 +357,7 @@ function refreshDocument(uri: string): void {
     if (context.services.updateYamlFile(uriToPath(uri), document.getText())) {
       revalidateProject(context, uri);
     }
+    context.translations.updateFile(uriToPath(uri), document.getText());
     publishDiagnostics(uri);
   } catch (error) {
     connection.console.error(`[Diagnostics] ${formatError(error)}`);
@@ -429,9 +451,24 @@ function buildServices(project: SymfonyProject): ServiceIndex | null {
   return services;
 }
 
+function buildTranslations(project: SymfonyProject): TranslationIndex {
+  const translations = new TranslationIndex(project.root);
+  logTranslations(translations);
+  return translations;
+}
+
+function logTranslations(translations: TranslationIndex): void {
+  for (const warning of translations.warnings) {
+    connection.console.warn(`[TranslatorConfig] ${warning}`);
+  }
+  connection.console.info(
+    `[TranslationIndex] ${translations.size()} messages indexed (default locale: ${translations.defaultLocale})`,
+  );
+}
+
 function registerFileWatchers(): void {
   if (!canWatchFiles) {
-    connection.console.warn('[Server] Client cannot watch files: restart the server after adding templates, routes or services');
+    connection.console.warn('[Server] Client cannot watch files: restart the server after adding templates, routes, services or translations');
     return;
   }
   const globs = [
@@ -449,6 +486,10 @@ function registerFileWatchers(): void {
     '**/var/cache/dev/url_generating_routes.php',
     '**/var/cache/dev/url_matching_routes.php',
     '**/config/services*.yaml',
+    '**/translations/**/*.yaml',
+    '**/translations/**/*.yml',
+    '**/translations/**/*.xlf',
+    '**/translations/**/*.xliff',
     '**/var/cache/dev/*Container.xml',
     '**/composer.json',
     '**/vendor/composer/installed.json',

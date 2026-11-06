@@ -1,6 +1,6 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { parseDocument } from 'yaml';
+import { isRecord, readPackageConfigs, resolveConfigPath } from './packageConfig';
 
 export interface TwigPathEntry {
   /** Absolute directory. */
@@ -42,31 +42,24 @@ export class TwigConfig {
         warnings.push(`${phpConfig} is not read: PHP configuration requires running PHP`);
       }
     }
-    for (const file of [...yamlFiles(packagesDir), ...yamlFiles(path.join(packagesDir, env))]) {
-      const document = parseDocument(fs.readFileSync(file, 'utf8'));
-      if (document.errors.length > 0) {
-        complete = false;
-        warnings.push(`Cannot parse ${file}: ${document.errors[0]?.message ?? 'unknown error'}`);
+    const configs = readPackageConfigs(projectRoot, env);
+    for (const { file, message } of configs.invalid) {
+      complete = false;
+      warnings.push(`Cannot parse ${file}: ${message}`);
+    }
+    for (const { file, content } of configs.blocks) {
+      const twig = content['twig'];
+      if (!isRecord(twig)) {
         continue;
       }
-      const content: unknown = document.toJS();
-      if (!isRecord(content)) {
-        continue;
+      if ('default_path' in twig) {
+        defaultPath = resolveConfigPath(twig['default_path'], projectRoot);
+        if (defaultPath === null) {
+          warnings.push(`Unresolved twig.default_path in ${file}`);
+        }
       }
-      const envBlock = content[`when@${env}`];
-      for (const twig of [content['twig'], isRecord(envBlock) ? envBlock['twig'] : undefined]) {
-        if (!isRecord(twig)) {
-          continue;
-        }
-        if ('default_path' in twig) {
-          defaultPath = resolveConfigPath(twig['default_path'], projectRoot);
-          if (defaultPath === null) {
-            warnings.push(`Unresolved twig.default_path in ${file}`);
-          }
-        }
-        for (const [rawPath, namespace] of normalizePaths(twig['paths'])) {
-          paths.set(rawPath, namespace);
-        }
+      for (const [rawPath, namespace] of normalizePaths(twig['paths'])) {
+        paths.set(rawPath, namespace);
       }
     }
 
@@ -104,32 +97,4 @@ function normalizePaths(value: unknown): Array<[string, string | null]> {
     }
     return typeof namespace === 'string' ? [[key, namespace]] : [];
   });
-}
-
-/**
- * Resolves %kernel.project_dir%; relative paths are relative to the project root
- * (the Twig loader's root path). Any other parameter cannot be resolved statically.
- */
-function resolveConfigPath(value: unknown, projectRoot: string): string | null {
-  if (typeof value !== 'string' || value === '') {
-    return null;
-  }
-  const replaced = value.replace(/%kernel\.project_dir%/g, projectRoot);
-  return /%[^%]+%/.test(replaced) ? null : path.resolve(projectRoot, replaced);
-}
-
-function yamlFiles(dir: string): string[] {
-  try {
-    return fs
-      .readdirSync(dir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && /\.ya?ml$/.test(entry.name))
-      .map((entry) => path.join(dir, entry.name))
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
