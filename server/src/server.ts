@@ -8,6 +8,9 @@ import {
   type InitializeResult,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
+import { EntityRepositoryResolver } from './doctrine/EntityRepositoryResolver';
+import { provideRepositoryDefinition } from './features/doctrine/definition';
+import { RepositoryReferenceFinder, type RepositoryReference } from './features/doctrine/RepositoryReferenceFinder';
 import { provideRouteNameCompletion } from './features/routes/completion';
 import { provideRouteDefinition } from './features/routes/definition';
 import { provideRouteDiagnostics } from './features/routes/diagnostics';
@@ -49,6 +52,7 @@ interface ProjectContext {
   routes: RouteIndex;
   services: ServiceIndex;
   translations: TranslationIndex;
+  repositories: EntityRepositoryResolver;
   reloadTimers: Map<string, NodeJS.Timeout>;
 }
 
@@ -59,6 +63,7 @@ interface ParsingContext {
   routeReferences: RouteReferenceFinder;
   autowireReferences: AutowireReferenceFinder;
   translationReferences: TranslationReferenceFinder;
+  repositoryReferences: RepositoryReferenceFinder;
 }
 
 interface AnalyzedDocument {
@@ -69,6 +74,8 @@ interface AnalyzedDocument {
   /** `#[Autowire]` references (PHP only). */
   autowire: AutowireReferences;
   translations: TranslationReference[];
+  /** `->getRepository()` arguments (PHP only). */
+  repositories: RepositoryReference[];
 }
 
 interface AnalyzedServicesYaml {
@@ -98,6 +105,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       routeReferences: new RouteReferenceFinder(parsers),
       autowireReferences: new AutowireReferenceFinder(parsers),
       translationReferences: new TranslationReferenceFinder(parsers),
+      repositoryReferences: new RepositoryReferenceFinder(parsers),
     };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
@@ -129,8 +137,9 @@ connection.onInitialized(() => {
       const routes = buildRoutes(project);
       const services = buildServices(project);
       const translations = buildTranslations(project);
-      if (templates !== null && routes !== null && services !== null && translations !== null) {
-        projects.push({ project, templates, routes, services, translations, reloadTimers: new Map() });
+      if (templates !== null && routes !== null && services !== null && translations !== null && parsing !== null) {
+        const repositories = new EntityRepositoryResolver(project.root, parsing.parsers);
+        projects.push({ project, templates, routes, services, translations, repositories, reloadTimers: new Map() });
       }
     }
     if (projects.length > 0) {
@@ -161,6 +170,7 @@ connection.onDefinition((params) => {
       provideTemplateDefinition(document, params.position, analyzed.templates, context.templates.resolver) ??
       provideRouteDefinition(document, params.position, analyzed.routes, context.routes) ??
       provideTranslationDefinition(document, params.position, analyzed.translations, context.translations) ??
+      provideRepositoryDefinition(document, params.position, analyzed.repositories, context.repositories, openText) ??
       provideServiceDefinition(document, params.position, analyzed.autowire.services, context.services) ??
       provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services)
     );
@@ -256,6 +266,7 @@ connection.onDidChangeWatchedFiles((params) => {
           scheduleReload(context, 'autoload', () => {
             context.routes.reloadAutoload();
             context.services.reloadAutoload();
+            context.repositories.reloadAutoload();
           });
           break;
         case 'source':
@@ -322,6 +333,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     routes: parsing.routeReferences.find(language, tree.rootNode),
     autowire: language === 'php' ? parsing.autowireReferences.find(tree.rootNode) : { services: [], parameters: [] },
     translations: parsing.translationReferences.find(language, tree.rootNode),
+    repositories: language === 'php' ? parsing.repositoryReferences.find(tree.rootNode) : [],
   };
 }
 
@@ -507,6 +519,11 @@ function registerFileWatchers(): void {
   connection.client
     .register(DidChangeWatchedFilesNotification.type, { watchers: globs.map((globPattern) => ({ globPattern })) })
     .catch((error: unknown) => connection.console.error(`[Server] File watcher registration failed: ${formatError(error)}`));
+}
+
+/** Content of an open document, which takes precedence over the file on disk. */
+function openText(file: string): string | null {
+  return openDocumentFor(file)?.getText() ?? null;
 }
 
 function openDocumentFor(file: string): TextDocument | undefined {

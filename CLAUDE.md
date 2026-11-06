@@ -44,6 +44,7 @@ symfony-zed/
 │   │   ├── routing/                # Extraction des routes : #[Route], YAML, cache compilé
 │   │   ├── services/               # Container XML compilé, services et références `@id` du YAML
 │   │   ├── translations/           # Noms de fichiers domaine.locale.format, messages YAML et XLIFF
+│   │   ├── doctrine/               # Entité → repositoryClass (lecture à la demande via PSR-4)
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
 │   │   │   ├── RouteIndex.ts
@@ -58,7 +59,8 @@ symfony-zed/
 │   │   │   ├── templates/          # definition, completion, diagnostics
 │   │   │   ├── routes/             # definition, completion, hover, paramètres, diagnostics
 │   │   │   ├── services/           # definition, completion, hover, diagnostics (YAML, #[Autowire])
-│   │   │   └── translations/       # definition, completion (trans(), |trans, {% trans %})
+│   │   │   ├── translations/       # definition, completion, diagnostics (trans(), |trans, {% trans %})
+│   │   │   └── doctrine/           # definition (getRepository)
 │   │   └── util/
 │   │       └── paths.ts            # Normalisation chemins/URI cross-platform
 │   └── tests/
@@ -126,7 +128,7 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 | Services | `var/cache/dev/App_KernelDevDebugContainer.xml` (glob `*Container.xml`, le plus récent gagne), puis clés explicites de `config/services.yaml` et `config/services_dev.yaml` |
 | Routes | Attributs `#[Route]` dans `src/Controller/**`, fichiers `config/routes/*.yaml`, et `var/cache/dev/url_generating_routes.php` si présent |
 | Traductions | Dossiers `translator.paths` puis `translator.default_path` (défaut `translations/`), récursivement : fichiers `domaine.locale.{yaml,yml,xlf,xliff}` ; locale par défaut `framework.default_locale` (défaut `en`) |
-| Entités Doctrine | Attributs `#[ORM\Entity]` dans `src/Entity/**` |
+| Entités Doctrine | Attribut `#[ORM\Entity]` de la classe, lu à la demande dans le fichier trouvé via PSR-4 (pas d'index) |
 
 ### Résolution des noms de templates
 
@@ -286,6 +288,17 @@ locale par défaut et de ses parents (`fr` pour `fr_FR`), seulement si `Translat
 Domaine inconnu, clé vide ou dynamique : aucun diagnostic. Un fichier de traduction modifié (disque ou document
 ouvert) revalide les documents du projet ; `bundles.php`, `composer.json` et `installed.json` rechargent la config.
 
+### Doctrine
+
+`->getRepository(X)` (quel que soit l'objet ; argument positionnel, `className:` d'`ObjectManager` ou
+`persistentObject:` de `ManagerRegistry`) avec `X` = `Foo::class` résolu via les `use` du document, ou chaîne
+littérale (toujours un FQCN ; en simples guillemets seuls `\\` et `\'` sont des échappements).
+Définition : le fichier de l'entité est trouvé via PSR-4 (document ouvert prioritaire), l'attribut doit se
+résoudre en `Doctrine\ORM\Mapping\Entity` ; `repositoryClass` nommé ou 1ᵉʳ positionnel, `::class` résolu via
+les `use` du fichier de l'entité ou chaîne → déclaration de la classe via PSR-4. Sans `repositoryClass`
+(repository par défaut ou factory configurés ailleurs), `static::class`, variable, concaténation : aucune réponse.
+Mappings XML/YAML non lus.
+
 ---
 
 ## Roadmap
@@ -322,7 +335,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Diagnostic : clé manquante dans la locale par défaut
 
 ### Phase 5 : Doctrine et Forms
-- [ ] `getRepository(Entity::class)` → repository
+- [x] `getRepository(Entity::class)` → repository
 - [ ] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
 
 ### Phase 6 : paramètres et variables d'environnement
