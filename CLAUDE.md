@@ -44,7 +44,7 @@ symfony-zed/
 │   │   ├── routing/                # Extraction des routes : #[Route], YAML, cache compilé
 │   │   ├── services/               # Container XML compilé, services et références `@id` du YAML
 │   │   ├── translations/           # Noms de fichiers domaine.locale.format, messages YAML et XLIFF
-│   │   ├── doctrine/               # Entité → repositoryClass (lecture à la demande via PSR-4)
+│   │   ├── doctrine/               # DoctrineEntities : repositoryClass, champs mappés (à la demande via PSR-4)
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
 │   │   │   ├── RouteIndex.ts
@@ -60,7 +60,7 @@ symfony-zed/
 │   │   │   ├── routes/             # definition, completion, hover, paramètres, diagnostics
 │   │   │   ├── services/           # definition, completion, hover, diagnostics (YAML, #[Autowire])
 │   │   │   ├── translations/       # definition, completion, diagnostics (trans(), |trans, {% trans %})
-│   │   │   └── doctrine/           # definition (getRepository)
+│   │   │   └── doctrine/           # definition (getRepository), completion des champs (form types)
 │   │   └── util/
 │   │       └── paths.ts            # Normalisation chemins/URI cross-platform
 │   └── tests/
@@ -298,6 +298,16 @@ résoudre en `Doctrine\ORM\Mapping\Entity` ; `repositoryClass` nommé ou 1ᵉʳ 
 les `use` du fichier de l'entité ou chaîne → déclaration de la classe via PSR-4. Sans `repositoryClass`
 (repository par défaut ou factory configurés ailleurs), `static::class`, variable, concaténation : aucune réponse.
 Mappings XML/YAML non lus.
+
+Champs d'une entité (`DoctrineEntities.fields`) : propriétés (et paramètres promus) portant `Column`, `ManyToOne`,
+`OneToOne`, `OneToMany`, `ManyToMany` ou `Embedded`, plus celles des parents `#[Entity]` / `#[MappedSuperclass]`
+(un parent non mappé est ignoré, comme Doctrine) et des traits utilisés. Classe non mappée (`Entity`,
+`MappedSuperclass`, `Embeddable`) : `null`. Cible : `targetEntity` / `class` littéral (nommé ou 1ᵉʳ positionnel),
+sinon type de la propriété pour `ManyToOne`, `OneToOne` et `Embedded` (inférence de Doctrine).
+Form types : complétion des champs mappés de `data_class` dans le 1ᵉʳ argument littéral de `->add()` (ou `child:`)
+au sein de `buildForm()`. `data_class` vient de `configureOptions()` : `setDefaults([... 'data_class' => X ...])`
+ou `setDefault('data_class', X)`, `X` littéral ; absent, dynamique, plusieurs valeurs, ou classe non mappée :
+aucune réponse (pas de champs de DTO).
 
 ---
 

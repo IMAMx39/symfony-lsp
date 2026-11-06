@@ -8,8 +8,10 @@ import {
   type InitializeResult,
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
-import { EntityRepositoryResolver } from './doctrine/EntityRepositoryResolver';
+import { DoctrineEntities } from './doctrine/DoctrineEntities';
 import { provideRepositoryDefinition } from './features/doctrine/definition';
+import { provideFormFieldCompletion } from './features/doctrine/formFieldCompletion';
+import { FormFieldReferenceFinder, type FormFieldReference } from './features/doctrine/FormFieldReferenceFinder';
 import { RepositoryReferenceFinder, type RepositoryReference } from './features/doctrine/RepositoryReferenceFinder';
 import { provideRouteNameCompletion } from './features/routes/completion';
 import { provideRouteDefinition } from './features/routes/definition';
@@ -52,7 +54,7 @@ interface ProjectContext {
   routes: RouteIndex;
   services: ServiceIndex;
   translations: TranslationIndex;
-  repositories: EntityRepositoryResolver;
+  doctrine: DoctrineEntities;
   reloadTimers: Map<string, NodeJS.Timeout>;
 }
 
@@ -64,6 +66,7 @@ interface ParsingContext {
   autowireReferences: AutowireReferenceFinder;
   translationReferences: TranslationReferenceFinder;
   repositoryReferences: RepositoryReferenceFinder;
+  formFieldReferences: FormFieldReferenceFinder;
 }
 
 interface AnalyzedDocument {
@@ -76,6 +79,8 @@ interface AnalyzedDocument {
   translations: TranslationReference[];
   /** `->getRepository()` arguments (PHP only). */
   repositories: RepositoryReference[];
+  /** `->add('field')` in form types (PHP only). */
+  formFields: FormFieldReference[];
 }
 
 interface AnalyzedServicesYaml {
@@ -106,6 +111,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       autowireReferences: new AutowireReferenceFinder(parsers),
       translationReferences: new TranslationReferenceFinder(parsers),
       repositoryReferences: new RepositoryReferenceFinder(parsers),
+      formFieldReferences: new FormFieldReferenceFinder(parsers),
     };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
@@ -138,8 +144,8 @@ connection.onInitialized(() => {
       const services = buildServices(project);
       const translations = buildTranslations(project);
       if (templates !== null && routes !== null && services !== null && translations !== null && parsing !== null) {
-        const repositories = new EntityRepositoryResolver(project.root, parsing.parsers);
-        projects.push({ project, templates, routes, services, translations, repositories, reloadTimers: new Map() });
+        const doctrine = new DoctrineEntities(project.root, parsing.parsers);
+        projects.push({ project, templates, routes, services, translations, doctrine, reloadTimers: new Map() });
       }
     }
     if (projects.length > 0) {
@@ -170,7 +176,7 @@ connection.onDefinition((params) => {
       provideTemplateDefinition(document, params.position, analyzed.templates, context.templates.resolver) ??
       provideRouteDefinition(document, params.position, analyzed.routes, context.routes) ??
       provideTranslationDefinition(document, params.position, analyzed.translations, context.translations) ??
-      provideRepositoryDefinition(document, params.position, analyzed.repositories, context.repositories, openText) ??
+      provideRepositoryDefinition(document, params.position, analyzed.repositories, context.doctrine, openText) ??
       provideServiceDefinition(document, params.position, analyzed.autowire.services, context.services) ??
       provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services)
     );
@@ -219,6 +225,7 @@ connection.onCompletion((params) => {
       provideRouteNameCompletion(document, params.position, analyzed.routes, context.routes.visibleRoutes()) ??
       provideRouteParameterCompletion(document, params.position, analyzed.routes, context.routes) ??
       provideTranslationCompletion(document, params.position, analyzed.translations, context.translations) ??
+      provideFormFieldCompletion(document, params.position, analyzed.formFields, context.doctrine, openText) ??
       provideServiceCompletion(document, params.position, analyzed.autowire.services, context.services.visibleServices()) ??
       provideParameterCompletion(document, params.position, analyzed.autowire.parameters, context.services.visibleParameters())
     );
@@ -266,7 +273,7 @@ connection.onDidChangeWatchedFiles((params) => {
           scheduleReload(context, 'autoload', () => {
             context.routes.reloadAutoload();
             context.services.reloadAutoload();
-            context.repositories.reloadAutoload();
+            context.doctrine.reloadAutoload();
           });
           break;
         case 'source':
@@ -334,6 +341,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     autowire: language === 'php' ? parsing.autowireReferences.find(tree.rootNode) : { services: [], parameters: [] },
     translations: parsing.translationReferences.find(language, tree.rootNode),
     repositories: language === 'php' ? parsing.repositoryReferences.find(tree.rootNode) : [],
+    formFields: language === 'php' ? parsing.formFieldReferences.find(tree.rootNode) : [],
   };
 }
 

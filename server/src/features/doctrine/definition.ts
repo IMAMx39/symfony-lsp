@@ -1,6 +1,6 @@
 import type { Location, Position } from 'vscode-languageserver';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
-import type { EntityRepositoryResolver, OpenText } from '../../doctrine/EntityRepositoryResolver';
+import type { DoctrineEntities, OpenText } from '../../doctrine/DoctrineEntities';
 import type { RepositoryReference } from './RepositoryReferenceFinder';
 
 /** The repository class declared by the entity given to `->getRepository()`. */
@@ -8,7 +8,7 @@ export function provideRepositoryDefinition(
   document: TextDocument,
   position: Position,
   references: readonly RepositoryReference[],
-  resolver: EntityRepositoryResolver,
+  resolver: DoctrineEntities,
   openText?: OpenText,
 ): Location | null {
   const offset = document.offsetAt(position);

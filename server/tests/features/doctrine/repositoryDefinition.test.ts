@@ -1,6 +1,6 @@
 import * as path from 'node:path';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { EntityRepositoryResolver } from '../../../src/doctrine/EntityRepositoryResolver';
+import { DoctrineEntities } from '../../../src/doctrine/DoctrineEntities';
 import { provideRepositoryDefinition } from '../../../src/features/doctrine/definition';
 import { RepositoryReferenceFinder } from '../../../src/features/doctrine/RepositoryReferenceFinder';
 import type { Parsers } from '../../../src/parsing/parsers';
@@ -12,12 +12,12 @@ const PRELUDE = '<?php\nnamespace App\\Controller;\nuse App\\Entity\\Product;\nu
 describe('repository definition', () => {
   let parsers: Parsers;
   let finder: RepositoryReferenceFinder;
-  let resolver: EntityRepositoryResolver;
+  let resolver: DoctrineEntities;
 
   beforeAll(async () => {
     parsers = await loadParsers();
     finder = new RepositoryReferenceFinder(parsers);
-    resolver = new EntityRepositoryResolver(fixtureApp, parsers);
+    resolver = new DoctrineEntities(fixtureApp, parsers);
   });
 
   function definition(code: string, openText?: (file: string) => string | null): { file: string; line: number } | null {
