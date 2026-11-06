@@ -226,6 +226,15 @@ Paramètres : `<parameters>` du container (valeur résolue, collections sans val
 `parameters:` des mêmes YAML (emplacement de la déclaration). Ceux commençant par `.` ne sont pas
 proposés. Définition : clé YAML seulement (un paramètre connu du seul container n'a pas de cible).
 
+Placeholders `%nom%` dans le YAML (`services/yamlParameterReferences.ts`) : toutes les valeurs (pas les
+clés) de `config/services*.yaml` et `config/packages/**/*.yaml` ; dans `config/routes*.yaml` et
+`config/routes/**`, seulement sous les clés que `Router::resolveParameters()` résout (`path`, `host`,
+`defaults`, `requirements`, `schemes`, `methods`, `condition`) ou qui en deviennent (`controller`,
+`locale`, `format`, `prefix`), pour chaque route et dans les blocs `when@*`. Seuls les scalaires dont le
+texte source est la valeur sont lus (simple, entre guillemets sans échappement ni `''`, sur une ligne) ;
+blocs `|` / `>` ignorés. `%%` échappé, `%env(...)%` ignoré (phase 6, case 2). Définition et complétion
+partagées avec `#[Autowire]` (la complétion d'un `%nom` non fermé ajoute le `%`).
+
 `#[Autowire]` en PHP : uniquement si le nom de l'attribut se résout (via les `use`) en
 `Symfony\Component\DependencyInjection\Attribute\Autowire`. Arguments nommés ou positionnels
 (`value`, `service`, `expression`, `env`, `param`, `lazy`) :
@@ -360,7 +369,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
 
 ### Phase 6 : paramètres et variables d'environnement
-- [ ] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)
+- [x] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)
 - [ ] Completion des `%env(...)%` (fichiers `.env*`, processeurs `int:`, `bool:`, `json:`…)
 
 ### Phase 7 : Messenger et Event Dispatcher

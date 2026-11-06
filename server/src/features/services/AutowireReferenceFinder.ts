@@ -3,7 +3,7 @@ import { phpStringLiteralValue } from '../../parsing/literals';
 import type { Parsers } from '../../parsing/parsers';
 import { resolveClassName } from '../../parsing/phpNames';
 import autowireQuery from '../../parsing/queries/php-autowire.scm?raw';
-import { findPlaceholders } from '../../services/parameterPlaceholders';
+import { findPlaceholders, type ParameterReference } from '../../services/parameterPlaceholders';
 import type { ServiceReference } from '../../services/yamlServices';
 
 const AUTOWIRE_ATTRIBUTE = 'Symfony\\Component\\DependencyInjection\\Attribute\\Autowire';
@@ -11,19 +11,7 @@ const AUTOWIRE_ATTRIBUTE = 'Symfony\\Component\\DependencyInjection\\Attribute\\
 /** Parameters of Autowire::__construct(), in order (for positional arguments). */
 const AUTOWIRE_PARAMETERS = ['value', 'service', 'expression', 'env', 'param', 'lazy'];
 
-/**
- * A parameter name in a document. `start`/`end` cover the `%name%` placeholder, or the whole
- * literal for `param: 'name'`; `nameStart`/`nameEnd` the name alone. `closed` is false for a
- * trailing `%name` being typed (completion then adds the closing `%`).
- */
-export interface ParameterReference {
-  name: string;
-  start: number;
-  end: number;
-  nameStart: number;
-  nameEnd: number;
-  closed: boolean;
-}
+export type { ParameterReference };
 
 export interface AutowireReferences {
   services: ServiceReference[];

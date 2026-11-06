@@ -1,4 +1,18 @@
 /**
+ * A parameter name in a document. `start`/`end` cover the `%name%` placeholder, or the whole
+ * literal for `param: 'name'`; `nameStart`/`nameEnd` the name alone. `closed` is false for a
+ * trailing `%name` being typed (completion then adds the closing `%`).
+ */
+export interface ParameterReference {
+  name: string;
+  start: number;
+  end: number;
+  nameStart: number;
+  nameEnd: number;
+  closed: boolean;
+}
+
+/**
  * A `%name%` placeholder of a string value. Offsets are relative to the value: `start` is the
  * opening `%`, `nameStart`/`nameEnd` the name alone. `closed` is false for a trailing `%name`
  * being typed.

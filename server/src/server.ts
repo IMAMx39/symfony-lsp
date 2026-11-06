@@ -1,3 +1,4 @@
+import * as path from 'node:path';
 import {
   createConnection,
   DidChangeWatchedFilesNotification,
@@ -42,6 +43,8 @@ import { bundledGrammarFiles, Parsers } from './parsing/parsers';
 import { ProjectTemplates } from './project/ProjectTemplates';
 import { SymfonyProject } from './project/SymfonyProject';
 import { MAIN_NAMESPACE } from './project/TwigLoaderPaths';
+import type { ParameterReference } from './services/parameterPlaceholders';
+import { findYamlParameterReferences, type YamlParameterScope } from './services/yamlParameterReferences';
 import { findClassReferences, findServiceReferences, type ServiceReference } from './services/yamlServices';
 import { isInsidePath, pathKey, uriToPath } from './util/paths';
 
@@ -92,6 +95,13 @@ interface AnalyzedServicesYaml {
   document: TextDocument;
   context: ProjectContext;
   references: ServiceReference[];
+}
+
+/** An open YAML configuration file (services, packages, routes) with its `%param%` placeholders. */
+interface AnalyzedConfigYaml {
+  document: TextDocument;
+  context: ProjectContext;
+  parameters: ParameterReference[];
 }
 
 const connection = createConnection(ProposedFeatures.all);
@@ -165,13 +175,18 @@ connection.onInitialized(() => {
 
 connection.onDefinition((params) => {
   try {
+    const configYaml = analyzeConfigYaml(params.textDocument.uri);
     const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
     if (servicesYaml) {
       const { document, context, references } = servicesYaml;
       return (
         provideServiceDefinition(document, params.position, references, context.services) ??
-        provideClassDefinition(document, params.position, findClassReferences(document.getText(), SERVICES_ENV), context.services)
+        provideClassDefinition(document, params.position, findClassReferences(document.getText(), SERVICES_ENV), context.services) ??
+        provideParameterDefinition(document, params.position, configYaml?.parameters ?? [], context.services)
       );
+    }
+    if (configYaml) {
+      return provideParameterDefinition(configYaml.document, params.position, configYaml.parameters, configYaml.context.services);
     }
     const analyzed = analyze(params.textDocument.uri);
     if (!analyzed) {
@@ -216,10 +231,14 @@ connection.onHover((params) => {
 
 connection.onCompletion((params) => {
   try {
-    const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
-    if (servicesYaml) {
-      const { document, context, references } = servicesYaml;
-      return provideServiceCompletion(document, params.position, references, context.services.visibleServices());
+    const configYaml = analyzeConfigYaml(params.textDocument.uri);
+    if (configYaml) {
+      const { document, context, parameters } = configYaml;
+      const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
+      return (
+        (servicesYaml && provideServiceCompletion(document, params.position, servicesYaml.references, context.services.visibleServices())) ??
+        provideParameterCompletion(document, params.position, parameters, context.services.visibleParameters())
+      );
     }
     const analyzed = analyze(params.textDocument.uri);
     if (!analyzed) {
@@ -361,6 +380,28 @@ function analyzeServicesYaml(uri: string): AnalyzedServicesYaml | null {
     return null;
   }
   return { document, context, references: findServiceReferences(document.getText(), SERVICES_ENV) };
+}
+
+function analyzeConfigYaml(uri: string): AnalyzedConfigYaml | null {
+  const document = documents.get(uri);
+  const context = document && projectFor(uri);
+  const scope = context ? configYamlScope(uriToPath(uri), context.project.root) : null;
+  if (!document || !context || scope === null) {
+    return null;
+  }
+  return { document, context, parameters: findYamlParameterReferences(document.getText(), scope) };
+}
+
+/** Where container parameters are resolved in a YAML file of the project, if anywhere. */
+function configYamlScope(file: string, projectRoot: string): YamlParameterScope | null {
+  if (!/\.ya?ml$/i.test(file)) {
+    return null;
+  }
+  const relative = path.relative(projectRoot, file).split(path.sep).join('/');
+  if (serviceFileKind(file, projectRoot) === 'services-config' || /^config\/packages\/.+$/.test(relative)) {
+    return 'all';
+  }
+  return routeFileKind(file, projectRoot) === 'routing-config' ? 'routes' : null;
 }
 
 function scheduleDiagnostics(document: TextDocument): void {
