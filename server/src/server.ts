@@ -24,6 +24,7 @@ import { provideRouteParameterCompletion } from './features/routes/parameterComp
 import { RouteReferenceFinder, type RouteReference } from './features/routes/RouteReferenceFinder';
 import { AutowireReferenceFinder, type AutowireReferences } from './features/services/AutowireReferenceFinder';
 import { provideParameterCompletion, provideServiceCompletion } from './features/services/completion';
+import { provideEnvCompletion } from './features/services/envCompletion';
 import { provideClassDefinition, provideParameterDefinition, provideServiceDefinition } from './features/services/definition';
 import { provideServiceDiagnostics } from './features/services/diagnostics';
 import { provideServiceHover } from './features/services/hover';
@@ -37,14 +38,16 @@ import { provideTranslationDiagnostics } from './features/translations/diagnosti
 import { TranslationReferenceFinder, type TranslationReference } from './features/translations/TranslationReferenceFinder';
 import { RouteIndex, routeFileKind } from './index/RouteIndex';
 import { SERVICES_ENV, ServiceIndex, serviceFileKind } from './index/ServiceIndex';
+import { EnvIndex } from './index/EnvIndex';
 import { TranslationIndex } from './index/TranslationIndex';
 import { DocumentTrees, languageOf } from './parsing/DocumentTrees';
 import { bundledGrammarFiles, Parsers } from './parsing/parsers';
 import { ProjectTemplates } from './project/ProjectTemplates';
 import { SymfonyProject } from './project/SymfonyProject';
 import { MAIN_NAMESPACE } from './project/TwigLoaderPaths';
+import type { EnvReference } from './services/envPlaceholders';
 import type { ParameterReference } from './services/parameterPlaceholders';
-import { findYamlParameterReferences, type YamlParameterScope } from './services/yamlParameterReferences';
+import { findYamlEnvReferences, findYamlParameterReferences, type YamlParameterScope } from './services/yamlParameterReferences';
 import { findClassReferences, findServiceReferences, type ServiceReference } from './services/yamlServices';
 import { isInsidePath, pathKey, uriToPath } from './util/paths';
 
@@ -60,6 +63,7 @@ interface ProjectContext {
   services: ServiceIndex;
   translations: TranslationIndex;
   doctrine: DoctrineEntities;
+  env: EnvIndex;
   reloadTimers: Map<string, NodeJS.Timeout>;
 }
 
@@ -102,6 +106,7 @@ interface AnalyzedConfigYaml {
   document: TextDocument;
   context: ProjectContext;
   parameters: ParameterReference[];
+  env: EnvReference[];
 }
 
 const connection = createConnection(ProposedFeatures.all);
@@ -161,7 +166,9 @@ connection.onInitialized(() => {
       const translations = buildTranslations(project);
       if (templates !== null && routes !== null && services !== null && translations !== null && parsing !== null) {
         const doctrine = new DoctrineEntities(project.root, parsing.parsers);
-        projects.push({ project, templates, routes, services, translations, doctrine, reloadTimers: new Map() });
+        const env = new EnvIndex(project.root);
+        connection.console.info(`[EnvIndex] ${env.all().length} environment variables found in .env files`);
+        projects.push({ project, templates, routes, services, translations, doctrine, env, reloadTimers: new Map() });
       }
     }
     if (projects.length > 0) {
@@ -233,10 +240,11 @@ connection.onCompletion((params) => {
   try {
     const configYaml = analyzeConfigYaml(params.textDocument.uri);
     if (configYaml) {
-      const { document, context, parameters } = configYaml;
+      const { document, context, parameters, env } = configYaml;
       const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
       return (
         (servicesYaml && provideServiceCompletion(document, params.position, servicesYaml.references, context.services.visibleServices())) ??
+        provideEnvCompletion(document, params.position, env, context.env.all(), context.services.visibleParameters()) ??
         provideParameterCompletion(document, params.position, parameters, context.services.visibleParameters())
       );
     }
@@ -253,6 +261,7 @@ connection.onCompletion((params) => {
       provideFormFieldCompletion(document, params.position, analyzed.formFields, context.doctrine, openText) ??
       provideQueryBuilderCompletion(document, params.position, analyzed.queryBuilder, context.doctrine, openText) ??
       provideServiceCompletion(document, params.position, analyzed.autowire.services, context.services.visibleServices()) ??
+      provideEnvCompletion(document, params.position, analyzed.autowire.env, context.env.all(), context.services.visibleParameters()) ??
       provideParameterCompletion(document, params.position, analyzed.autowire.parameters, context.services.visibleParameters())
     );
   } catch (error) {
@@ -269,6 +278,9 @@ connection.onDidChangeWatchedFiles((params) => {
       const context = projects.find((candidate) => isInsidePath(file, candidate.project.root));
       if (!context) {
         continue;
+      }
+      if (EnvIndex.isEnvFile(file, context.project.root)) {
+        scheduleReload(context, 'env', () => context.env.reload());
       }
       if (ProjectTemplates.isConfigFile(file, context.project.root)) {
         scheduleReload(context, 'templates', () => {
@@ -364,7 +376,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     context,
     templates: parsing.templateReferences.find(language, tree.rootNode),
     routes: parsing.routeReferences.find(language, tree.rootNode),
-    autowire: language === 'php' ? parsing.autowireReferences.find(tree.rootNode) : { services: [], parameters: [] },
+    autowire: language === 'php' ? parsing.autowireReferences.find(tree.rootNode) : { services: [], parameters: [], env: [] },
     translations: parsing.translationReferences.find(language, tree.rootNode),
     repositories: language === 'php' ? parsing.repositoryReferences.find(tree.rootNode) : [],
     formFields: language === 'php' ? parsing.formFieldReferences.find(tree.rootNode) : [],
@@ -389,7 +401,8 @@ function analyzeConfigYaml(uri: string): AnalyzedConfigYaml | null {
   if (!document || !context || scope === null) {
     return null;
   }
-  return { document, context, parameters: findYamlParameterReferences(document.getText(), scope) };
+  const text = document.getText();
+  return { document, context, parameters: findYamlParameterReferences(text, scope), env: findYamlEnvReferences(text, scope) };
 }
 
 /** Where container parameters are resolved in a YAML file of the project, if anywhere. */
@@ -570,6 +583,8 @@ function registerFileWatchers(): void {
     '**/translations/**/*.xlf',
     '**/translations/**/*.xliff',
     '**/var/cache/dev/*Container.xml',
+    '**/.env',
+    '**/.env.*',
     '**/composer.json',
     '**/vendor/composer/installed.json',
   ];

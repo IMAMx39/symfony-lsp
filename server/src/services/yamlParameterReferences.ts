@@ -1,4 +1,5 @@
 import { isMap, isScalar, isSeq, parseDocument, type Scalar } from 'yaml';
+import { envReferenceOf, type EnvReference } from './envPlaceholders';
 import { findPlaceholders, type ParameterReference } from './parameterPlaceholders';
 
 /**
@@ -19,15 +20,49 @@ export type YamlParameterScope = 'all' | 'routes';
  * placeholders are environment variables, not parameters. Works on files being edited.
  */
 export function findYamlParameterReferences(source: string, scope: YamlParameterScope): ParameterReference[] {
-  const document = parseDocument(source);
   const references: ParameterReference[] = [];
+  forEachResolvedValue(source, scope, (content, contentStart) => {
+    for (const placeholder of findPlaceholders(content)) {
+      if (placeholder.name.startsWith('env(')) {
+        continue;
+      }
+      references.push({
+        name: placeholder.name,
+        start: contentStart + placeholder.start,
+        end: contentStart + placeholder.nameEnd + (placeholder.closed ? 1 : 0),
+        nameStart: contentStart + placeholder.nameStart,
+        nameEnd: contentStart + placeholder.nameEnd,
+        closed: placeholder.closed,
+      });
+    }
+  });
+  return references;
+}
+
+/** `%env(...)%` placeholders in the same values as findYamlParameterReferences(). */
+export function findYamlEnvReferences(source: string, scope: YamlParameterScope): EnvReference[] {
+  const references: EnvReference[] = [];
+  forEachResolvedValue(source, scope, (content, contentStart) => {
+    for (const placeholder of findPlaceholders(content)) {
+      const reference = envReferenceOf(placeholder, contentStart);
+      if (reference) {
+        references.push(reference);
+      }
+    }
+  });
+  return references;
+}
+
+/** Calls `visit` with the content and absolute start of each string value where placeholders are resolved. */
+function forEachResolvedValue(source: string, scope: YamlParameterScope, visit: (content: string, contentStart: number) => void): void {
+  const document = parseDocument(source);
   const collect = (node: unknown): void => {
     if (isMap(node)) {
       node.items.forEach((pair) => collect(pair.value));
     } else if (isSeq(node)) {
       node.items.forEach(collect);
     } else if (isScalar(node)) {
-      scalarReferences(node, source, references);
+      scalarContent(node, source, visit);
     }
   };
   const root = document.contents;
@@ -44,10 +79,9 @@ export function findYamlParameterReferences(source: string, scope: YamlParameter
       }
     }
   }
-  return references;
 }
 
-function scalarReferences(node: Scalar, source: string, references: ParameterReference[]): void {
+function scalarContent(node: Scalar, source: string, visit: (content: string, contentStart: number) => void): void {
   if (typeof node.value !== 'string' || !node.range) {
     return;
   }
@@ -60,18 +94,5 @@ function scalarReferences(node: Scalar, source: string, references: ParameterRef
   if (content !== node.value) {
     return;
   }
-  const contentStart = node.range[0] + (quoted ? 1 : 0);
-  for (const placeholder of findPlaceholders(content)) {
-    if (placeholder.name.startsWith('env(')) {
-      continue;
-    }
-    references.push({
-      name: placeholder.name,
-      start: contentStart + placeholder.start,
-      end: contentStart + placeholder.nameEnd + (placeholder.closed ? 1 : 0),
-      nameStart: contentStart + placeholder.nameStart,
-      nameEnd: contentStart + placeholder.nameEnd,
-      closed: placeholder.closed,
-    });
-  }
+  visit(content, node.range[0] + (quoted ? 1 : 0));
 }

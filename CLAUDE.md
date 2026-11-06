@@ -47,6 +47,7 @@ symfony-zed/
 │   │   ├── doctrine/               # DoctrineEntities : repositoryClass, champs mappés (à la demande via PSR-4)
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
+│   │   │   ├── EnvIndex.ts         # Variables des fichiers .env (ordre de Dotenv::loadEnv)
 │   │   │   ├── RouteIndex.ts
 │   │   │   ├── ServiceIndex.ts
 │   │   │   └── TranslationIndex.ts
@@ -127,6 +128,7 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 | Overrides de bundles | `<default_path>/bundles/<NomBundle>/...` (prioritaires sur le bundle) |
 | Services | `var/cache/dev/App_KernelDevDebugContainer.xml` (glob `*Container.xml`, le plus récent gagne), puis clés explicites de `config/services.yaml` et `config/services_dev.yaml` |
 | Routes | Attributs `#[Route]` dans `src/Controller/**`, fichiers `config/routes/*.yaml`, et `var/cache/dev/url_generating_routes.php` si présent |
+| Variables d'environnement | `.env` (ou `.env.dist`), `.env.local` (sauf `test`), `.env.<APP_ENV>`, `.env.<APP_ENV>.local` à la racine, `APP_ENV` lu dans ces fichiers (défaut `dev`) ; plus les `env(NOM)` de `parameters:` / du container. Ni `.env.local.php` ni l'environnement Docker |
 | Traductions | Dossiers `translator.paths` puis `translator.default_path` (défaut `translations/`), récursivement : fichiers `domaine.locale.{yaml,yml,xlf,xliff}` ; locale par défaut `framework.default_locale` (défaut `en`) |
 | Entités Doctrine | Attribut `#[ORM\Entity]` de la classe, lu à la demande dans le fichier trouvé via PSR-4 (pas d'index) |
 
@@ -232,8 +234,15 @@ clés) de `config/services*.yaml` et `config/packages/**/*.yaml` ; dans `config/
 `defaults`, `requirements`, `schemes`, `methods`, `condition`) ou qui en deviennent (`controller`,
 `locale`, `format`, `prefix`), pour chaque route et dans les blocs `when@*`. Seuls les scalaires dont le
 texte source est la valeur sont lus (simple, entre guillemets sans échappement ni `''`, sur une ligne) ;
-blocs `|` / `>` ignorés. `%%` échappé, `%env(...)%` ignoré (phase 6, case 2). Définition et complétion
+blocs `|` / `>` ignorés. `%%` échappé, `%env(...)%` traité à part. Définition et complétion
 partagées avec `#[Autowire]` (la complétion d'un `%nom` non fermé ajoute le `%`).
+
+`%env(...)%` (mêmes valeurs YAML, valeur de `#[Autowire]`, et `#[Autowire(env: '...')]`) : complétion seule,
+par segment de `processeur:...:NOM`. Dernier segment : variables (`EnvIndex`, puis `env(NOM)` des
+paramètres) et processeurs ; segments précédents : processeurs (liste de
+`EnvVarProcessor::getProvidedTypes()` 7.4) ; l'argument qui suit `default`, `key` ou `enum` n'est pas
+complété. Une variable complète la fermeture manquante (`)%`, ou `%` après une `)` existante). Les `.env*`
+sont relus via le watcher (Zed ne les synchronise pas : pas de document ouvert).
 
 `#[Autowire]` en PHP : uniquement si le nom de l'attribut se résout (via les `use`) en
 `Symfony\Component\DependencyInjection\Attribute\Autowire`. Arguments nommés ou positionnels
@@ -370,7 +379,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 
 ### Phase 6 : paramètres et variables d'environnement
 - [x] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)
-- [ ] Completion des `%env(...)%` (fichiers `.env*`, processeurs `int:`, `bool:`, `json:`…)
+- [x] Completion des `%env(...)%` (fichiers `.env*`, processeurs `int:`, `bool:`, `json:`…)
 
 ### Phase 7 : Messenger et Event Dispatcher
 - [ ] Message → handlers (`#[AsMessageHandler]`, tag `messenger.message_handler`)

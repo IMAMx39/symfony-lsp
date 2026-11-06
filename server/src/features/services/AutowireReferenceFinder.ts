@@ -3,6 +3,7 @@ import { phpStringLiteralValue } from '../../parsing/literals';
 import type { Parsers } from '../../parsing/parsers';
 import { resolveClassName } from '../../parsing/phpNames';
 import autowireQuery from '../../parsing/queries/php-autowire.scm?raw';
+import { envReferenceOf, type EnvReference } from '../../services/envPlaceholders';
 import { findPlaceholders, type ParameterReference } from '../../services/parameterPlaceholders';
 import type { ServiceReference } from '../../services/yamlServices';
 
@@ -16,6 +17,8 @@ export type { ParameterReference };
 export interface AutowireReferences {
   services: ServiceReference[];
   parameters: ParameterReference[];
+  /** `env: 'NAME'` and `%env(NAME)%` placeholders of the value. */
+  env: EnvReference[];
 }
 
 /**
@@ -31,7 +34,7 @@ export class AutowireReferenceFinder {
   }
 
   find(root: Node): AutowireReferences {
-    const references: AutowireReferences = { services: [], parameters: [] };
+    const references: AutowireReferences = { services: [], parameters: [], env: [] };
     for (const match of this.query.matches(root)) {
       const attributeName = match.captures.find((capture) => capture.name === 'attribute')?.node;
       const args = match.captures.find((capture) => capture.name === 'arguments')?.node;
@@ -89,6 +92,9 @@ function readArguments(args: Node, references: AutowireReferences, optional: boo
           optional,
         });
         break;
+      case 'env':
+        references.env.push({ start: contentStart, end: contentEnd, closing: { end: contentEnd, text: '' } });
+        break;
       case 'param':
         references.parameters.push({
           name: value,
@@ -114,6 +120,11 @@ function readArguments(args: Node, references: AutowireReferences, optional: boo
           }
         } else {
           for (const placeholder of findPlaceholders(value)) {
+            const env = envReferenceOf(placeholder, contentStart);
+            if (env) {
+              references.env.push(env);
+              continue;
+            }
             references.parameters.push({
               name: placeholder.name,
               start: contentStart + placeholder.start,
