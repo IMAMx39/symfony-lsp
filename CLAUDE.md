@@ -247,7 +247,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 ### Phase 0 : squelette
 - [x] `extension.toml`, `Cargo.toml`, `lib.rs` lançant `node server/dist/server.js`
 - [x] Serveur LSP qui démarre, log son initialisation, détecte la racine Symfony
-- [ ] Installable via `zed: install dev extension` sous Windows
+- [x] Installable via `zed: install dev extension` sous Windows
 
 ### Phase 1 : templates (priorité)
 - [x] Definition : `render()`, `renderView()`, `renderBlock()`, `#[Template('...')]` en PHP
