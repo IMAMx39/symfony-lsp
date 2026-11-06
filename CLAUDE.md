@@ -60,7 +60,7 @@ symfony-zed/
 │   │   │   ├── routes/             # definition, completion, hover, paramètres, diagnostics
 │   │   │   ├── services/           # definition, completion, hover, diagnostics (YAML, #[Autowire])
 │   │   │   ├── translations/       # definition, completion, diagnostics (trans(), |trans, {% trans %})
-│   │   │   └── doctrine/           # definition (getRepository), completion des champs (form types)
+│   │   │   └── doctrine/           # definition (getRepository), completion des champs (form types, QueryBuilder)
 │   │   └── util/
 │   │       └── paths.ts            # Normalisation chemins/URI cross-platform
 │   └── tests/
@@ -309,6 +309,17 @@ au sein de `buildForm()`. `data_class` vient de `configureOptions()` : `setDefau
 ou `setDefault('data_class', X)`, `X` littéral ; absent, dynamique, plusieurs valeurs, ou classe non mappée :
 aucune réponse (pas de champs de DTO).
 
+QueryBuilder : complétion après `alias.` (et `alias.embedded.` pour un `Embedded`) dans les chaînes littérales
+(ou tableaux de chaînes) de `select`, `addSelect`, `where`, `andWhere`, `orWhere`, `having`, `andHaving`,
+`orHaving`, `orderBy`, `addOrderBy`, `groupBy`, `addGroupBy`, `join`, `innerJoin`, `leftJoin`, `set`, `indexBy`.
+L'appel doit appartenir à une chaîne contenant `createQueryBuilder()`, ou à une variable affectée **une seule
+fois** depuis une telle chaîne dans la même fonction (réaffectations `$qb = $qb->...` permises, toute autre
+affectation → aucune réponse). Alias : `$this->createQueryBuilder('a')` (entité du repository, lue dans
+`parent::__construct($registry, X::class)` de son constructeur), `->from(X, 'a')`, `->join('a.assoc', 'b')`
+(cible de l'association) ou `->join(X::class, 'b', ...)`. Alias déclaré deux fois différemment, alias inconnu,
+paramètre `:x`, chemin au-delà d'une association, chaîne dynamique : aucune réponse. `.` est un caractère
+déclencheur de complétion.
+
 ---
 
 ## Roadmap
@@ -346,7 +357,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 
 ### Phase 5 : Doctrine et Forms
 - [x] `getRepository(Entity::class)` → repository
-- [ ] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
+- [x] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
 
 ### Phase 6 : paramètres et variables d'environnement
 - [ ] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)

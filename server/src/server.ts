@@ -12,6 +12,8 @@ import { DoctrineEntities } from './doctrine/DoctrineEntities';
 import { provideRepositoryDefinition } from './features/doctrine/definition';
 import { provideFormFieldCompletion } from './features/doctrine/formFieldCompletion';
 import { FormFieldReferenceFinder, type FormFieldReference } from './features/doctrine/FormFieldReferenceFinder';
+import { provideQueryBuilderCompletion } from './features/doctrine/queryBuilderCompletion';
+import { QueryBuilderReferenceFinder, type QueryBuilderReference } from './features/doctrine/QueryBuilderReferenceFinder';
 import { RepositoryReferenceFinder, type RepositoryReference } from './features/doctrine/RepositoryReferenceFinder';
 import { provideRouteNameCompletion } from './features/routes/completion';
 import { provideRouteDefinition } from './features/routes/definition';
@@ -67,6 +69,7 @@ interface ParsingContext {
   translationReferences: TranslationReferenceFinder;
   repositoryReferences: RepositoryReferenceFinder;
   formFieldReferences: FormFieldReferenceFinder;
+  queryBuilderReferences: QueryBuilderReferenceFinder;
 }
 
 interface AnalyzedDocument {
@@ -81,6 +84,8 @@ interface AnalyzedDocument {
   repositories: RepositoryReference[];
   /** `->add('field')` in form types (PHP only). */
   formFields: FormFieldReference[];
+  /** DQL string literals of QueryBuilder calls (PHP only). */
+  queryBuilder: QueryBuilderReference[];
 }
 
 interface AnalyzedServicesYaml {
@@ -112,6 +117,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       translationReferences: new TranslationReferenceFinder(parsers),
       repositoryReferences: new RepositoryReferenceFinder(parsers),
       formFieldReferences: new FormFieldReferenceFinder(parsers),
+      queryBuilderReferences: new QueryBuilderReferenceFinder(parsers),
     };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
@@ -121,7 +127,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       textDocumentSync: TextDocumentSyncKind.Incremental,
       definitionProvider: true,
       hoverProvider: true,
-      completionProvider: { triggerCharacters: ["'", '"', '/', '@', '%'] },
+      completionProvider: { triggerCharacters: ["'", '"', '/', '@', '%', '.'] },
     },
     serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
   };
@@ -226,6 +232,7 @@ connection.onCompletion((params) => {
       provideRouteParameterCompletion(document, params.position, analyzed.routes, context.routes) ??
       provideTranslationCompletion(document, params.position, analyzed.translations, context.translations) ??
       provideFormFieldCompletion(document, params.position, analyzed.formFields, context.doctrine, openText) ??
+      provideQueryBuilderCompletion(document, params.position, analyzed.queryBuilder, context.doctrine, openText) ??
       provideServiceCompletion(document, params.position, analyzed.autowire.services, context.services.visibleServices()) ??
       provideParameterCompletion(document, params.position, analyzed.autowire.parameters, context.services.visibleParameters())
     );
@@ -342,6 +349,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     translations: parsing.translationReferences.find(language, tree.rootNode),
     repositories: language === 'php' ? parsing.repositoryReferences.find(tree.rootNode) : [],
     formFields: language === 'php' ? parsing.formFieldReferences.find(tree.rootNode) : [],
+    queryBuilder: language === 'php' ? parsing.queryBuilderReferences.find(tree.rootNode) : [],
   };
 }
 
