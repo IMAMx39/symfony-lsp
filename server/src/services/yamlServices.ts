@@ -2,7 +2,7 @@ import { Location, Range } from 'vscode-languageserver';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { isMap, isScalar, isSeq, parseDocument, type Document, type Pair } from 'yaml';
 import { pathToUri } from '../util/paths';
-import type { ParameterInfo, ServiceInfo } from './types';
+import type { ParameterInfo, ServiceInfo, ServiceTag } from './types';
 
 /** Keys of a service definition whose values YamlFileLoader resolves as references (`@id`). */
 const REFERENCE_KEYS = new Set(['arguments', 'properties', 'calls', 'configurator', 'factory', 'bind']);
@@ -163,15 +163,15 @@ function parameterValue(value: unknown): string | null {
   return value.value === null ? 'null' : String(value.value);
 }
 
-function readDefinition(id: string, value: unknown): Pick<ServiceInfo, 'class' | 'alias' | 'tags'> | null {
+function readDefinition(id: string, value: unknown): Pick<ServiceInfo, 'class' | 'alias' | 'tags' | 'tagEntries'> | null {
   const implicitClass = NAMESPACED_CLASS.test(id) ? id : null;
   if (value === null || (isScalar(value) && value.value === null)) {
-    return { class: implicitClass, alias: null, tags: [] };
+    return { class: implicitClass, alias: null, tags: [], tagEntries: [] };
   }
   if (isScalar(value)) {
     // Short alias syntax: `foo: '@bar'`.
     return typeof value.value === 'string' && value.value.startsWith('@')
-      ? { class: null, alias: value.value.slice(1), tags: [] }
+      ? { class: null, alias: value.value.slice(1), tags: [], tagEntries: [] }
       : null;
   }
   if (!isMap(value) || value.has('resource')) {
@@ -179,37 +179,59 @@ function readDefinition(id: string, value: unknown): Pick<ServiceInfo, 'class' |
   }
   if (value.has('alias')) {
     const alias = scalarString(value.get('alias', true));
-    return alias === null ? null : { class: null, alias, tags: [] };
+    return alias === null ? null : { class: null, alias, tags: [], tagEntries: [] };
   }
   const explicitClass = scalarString(value.get('class', true))?.replace(/^\\/, '') ?? null;
+  const tagEntries = readTags(value.get('tags', true));
   return {
     // A child definition inherits the class of its parent: unknown from the YAML alone.
     class: explicitClass ?? (value.has('parent') ? null : implicitClass),
     alias: null,
-    tags: tagNames(value.get('tags', true)),
+    tags: [...new Set(tagEntries.map((tag) => tag.name))],
+    tagEntries,
   };
 }
 
-/** `tags: [name, { name: x, ... }, { x: { ... } }]` (the forms YamlFileLoader accepts). */
-function tagNames(tags: unknown): string[] {
-  const names = new Set<string>();
+/**
+ * `tags: [name, { name: x, ...attributes }, { x: { ...attributes } }]`, the forms YamlFileLoader
+ * accepts (a single key holding a map names the tag). Non-scalar attributes are left out.
+ */
+function readTags(tags: unknown): ServiceTag[] {
+  const entries: ServiceTag[] = [];
   for (const tag of isSeq(tags) ? tags.items : []) {
-    if (isMap(tag)) {
-      const name = scalarString(tag.get('name', true));
-      const [single] = tag.items;
-      const key = tag.items.length === 1 && single && isMap(single.value) ? scalarString(single.key) : null;
-      const found = name ?? key;
-      if (found !== null) {
-        names.add(found);
-      }
-    } else {
+    if (!isMap(tag)) {
       const name = scalarString(tag);
       if (name !== null) {
-        names.add(name);
+        entries.push({ name, attributes: {} });
+      }
+      continue;
+    }
+    const [single] = tag.items;
+    const keyed = tag.items.length === 1 && single && isMap(single.value) ? scalarString(single.key) : null;
+    const name = keyed ?? scalarString(tag.get('name', true));
+    if (name === null) {
+      continue;
+    }
+    const attributes: Record<string, string> = {};
+    const attributePairs = keyed !== null && single && isMap(single.value) ? single.value.items : tag.items;
+    for (const pair of attributePairs) {
+      const key = scalarString(pair.key);
+      const text = scalarText(pair.value);
+      if (key !== null && text !== null && (keyed !== null || key !== 'name')) {
+        attributes[key] = text;
       }
     }
+    entries.push({ name, attributes });
   }
-  return [...names];
+  return entries;
+}
+
+/** Scalar value as text (`''` for null), null for collections. */
+function scalarText(node: unknown): string | null {
+  if (node === null) {
+    return '';
+  }
+  return isScalar(node) ? (node.value === null ? '' : String(node.value)) : null;
 }
 
 function scanDefinition(definition: unknown, collect: (node: unknown) => void): void {

@@ -1,12 +1,11 @@
-import * as fs from 'node:fs';
 import { Location, Range } from 'vscode-languageserver';
-import { TextDocument } from 'vscode-languageserver-textdocument';
+import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { Node } from 'web-tree-sitter';
 import type { Parsers } from '../parsing/parsers';
-import { fileNamespace, resolveClassName } from '../parsing/phpNames';
+import { resolveClassName } from '../parsing/phpNames';
 import { ComposerAutoload } from '../project/ComposerAutoload';
 import { locateClass } from '../project/classLocation';
-import { pathToUri } from '../util/paths';
+import { withClassDeclaration, type OpenText, type ParsedClass } from '../project/classSource';
 import { phpClassNameValue } from './phpClassNames';
 
 const MAPPING = 'Doctrine\\ORM\\Mapping\\';
@@ -22,8 +21,7 @@ const TO_ONE = [`${MAPPING}ManyToOne`, `${MAPPING}OneToOne`];
 /** Depth limit for parents and traits (guards against cycles). */
 const MAX_DEPTH = 8;
 
-/** Content of a file: an open document when there is one, else null to read the disk. */
-export type OpenText = (file: string) => string | null;
+export type { OpenText };
 
 export type EntityFieldKind = 'field' | 'association' | 'embedded';
 
@@ -38,13 +36,6 @@ export interface EntityField {
   /** Declared PHP type of the property, as written. */
   phpType: string | null;
   location: Location;
-}
-
-interface ParsedClass {
-  root: Node;
-  declaration: Node;
-  uri: string;
-  text: TextDocument;
 }
 
 /**
@@ -149,25 +140,7 @@ export class DoctrineEntities {
   }
 
   private withClass<T>(className: string, openText: OpenText, kinds: string | string[], read: (parsed: ParsedClass) => T): T | null {
-    const fqcn = className.replace(/^\\/, '');
-    const file = this.autoload.findClassFile(fqcn);
-    const source = file === null ? null : (openText(file) ?? readText(file));
-    const tree = file === null || source === null ? null : this.parsers.parse('php', source);
-    if (file === null || source === null || tree === null) {
-      return null;
-    }
-    try {
-      const root = tree.rootNode;
-      const shortName = fqcn.split('\\').pop();
-      const declaration = root.descendantsOfType(kinds).find((node) => node?.childForFieldName('name')?.text === shortName);
-      if (!declaration || (fileNamespace(root) ?? '') !== fqcn.split('\\').slice(0, -1).join('\\')) {
-        return null;
-      }
-      const uri = pathToUri(file);
-      return read({ root, declaration, uri, text: TextDocument.create(uri, 'php', 0, source) });
-    } finally {
-      tree.delete();
-    }
+    return withClassDeclaration(this.autoload, this.parsers, className, openText, kinds, read);
   }
 }
 
@@ -287,12 +260,4 @@ function methodNamed(declaration: Node, name: string): Node | undefined {
       .childForFieldName('body')
       ?.namedChildren.find((member) => member?.type === 'method_declaration' && member.childForFieldName('name')?.text === name) ?? undefined
   );
-}
-
-function readText(file: string): string | null {
-  try {
-    return fs.readFileSync(file, 'utf8');
-  } catch {
-    return null;
-  }
 }

@@ -47,6 +47,25 @@ describe('parseServicesYaml', () => {
     const parsed = parseServicesYaml(source, servicesFile, 'dev')!.services;
     expect(parsed.map((service) => service.tags)).toEqual([['plain.tag', 'named.tag', 'keyed.tag'], []]);
     expect(byId.get('app.newsletter')?.tags).toEqual(['app.tag']);
+    expect(parsed[0]?.tagEntries).toEqual([
+      { name: 'plain.tag', attributes: {} },
+      { name: 'named.tag', attributes: { priority: '10' } },
+      { name: 'keyed.tag', attributes: { priority: '5' } },
+      { name: 'plain.tag', attributes: {} },
+    ]);
+  });
+
+  it('reads scalar tag attributes as text, nested ones left out', () => {
+    const source = [
+      'services:',
+      '    foo:',
+      '        tags:',
+      '            - { name: messenger.message_handler, handles: App\\Message\\Foo, method: ~, sign: true, nested: [a] }',
+    ].join('\n');
+    const [service] = parseServicesYaml(source, servicesFile, 'dev')!.services;
+    expect(service?.tagEntries).toEqual([
+      { name: 'messenger.message_handler', attributes: { handles: 'App\\Message\\Foo', method: '', sign: 'true' } },
+    ]);
   });
 
   it('leaves the class of a child definition unknown', () => {

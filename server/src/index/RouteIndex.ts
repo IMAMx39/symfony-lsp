@@ -9,11 +9,10 @@ import { parseCompiledGeneratorRoutes, parseCompiledMatcherMethods } from '../ro
 import type { RouteExtraction, RouteImport, RouteInfo } from '../routing/types';
 import { parseRouteYaml } from '../routing/yamlRoutes';
 import { isInsidePath, pathKey } from '../util/paths';
+import { phpFiles } from '../util/phpFiles';
 
 /** Environment whose routes are mirrored (the one developers run). */
 export const ROUTING_ENV = 'dev';
-
-const IGNORED_DIRS = new Set(['vendor', 'var', 'node_modules', 'public', '.git']);
 
 /** What a changed file means for the routes of a project. */
 export type RouteFileKind = 'routing-config' | 'compiled' | 'autoload' | 'source' | null;
@@ -224,29 +223,6 @@ function routingYamlFiles(projectRoot: string): string[] {
     ...yaml(path.join(config, 'routes')),
     ...[path.join(config, 'routes.yaml')].filter((file) => fs.existsSync(file)),
   ];
-}
-
-function phpFiles(dir: string): string[] {
-  const files: string[] = [];
-  const pending = [dir];
-  while (pending.length > 0) {
-    const current = pending.pop()!;
-    let entries: fs.Dirent[];
-    try {
-      entries = fs.readdirSync(current, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-    for (const entry of entries) {
-      const full = path.join(current, entry.name);
-      if (entry.isDirectory() && !IGNORED_DIRS.has(entry.name)) {
-        pending.push(full);
-      } else if (entry.isFile() && entry.name.endsWith('.php')) {
-        files.push(full);
-      }
-    }
-  }
-  return files.sort();
 }
 
 function listFiles(dir: string): string[] {

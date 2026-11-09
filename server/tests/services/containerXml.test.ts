@@ -14,7 +14,7 @@ describe('parseContainerXml', () => {
   const byName = new Map(parameters.map((parameter) => [parameter.name, parameter]));
 
   it('reads the top-level services with their class', () => {
-    expect(byId.get('App\\Service\\Mailer')).toEqual({ id: 'App\\Service\\Mailer', class: 'App\\Service\\Mailer', alias: null, tags: [], location: null });
+    expect(byId.get('App\\Service\\Mailer')).toEqual({ id: 'App\\Service\\Mailer', class: 'App\\Service\\Mailer', alias: null, tags: [], tagEntries: [], location: null });
     expect(byId.get('mailer.transport')?.class).toBe('Acme\\FooBundle\\Mailer\\Transport');
   });
 
@@ -23,12 +23,28 @@ describe('parseContainerXml', () => {
   });
 
   it('reads aliases', () => {
-    expect(byId.get('Psr\\Log\\LoggerInterface')).toEqual({ id: 'Psr\\Log\\LoggerInterface', class: null, alias: 'logger', tags: [], location: null });
+    expect(byId.get('Psr\\Log\\LoggerInterface')).toEqual({ id: 'Psr\\Log\\LoggerInterface', class: null, alias: 'logger', tags: [], tagEntries: [], location: null });
   });
 
   it('reads tag names once each, including names written as text', () => {
     expect(byId.get('app.newsletter')?.tags).toEqual(['app.tag', 'kernel.event_listener', 'app.named_tag']);
     expect(byId.get('logger')?.tags).toEqual(['kernel.reset']);
+  });
+
+  it('reads every tag application with its attributes, empty values included', () => {
+    expect(byId.get('app.newsletter')?.tagEntries).toEqual([
+      { name: 'app.tag', attributes: { ref: '@app.mailer' } },
+      { name: 'kernel.event_listener', attributes: { event: 'kernel.request' } },
+      { name: 'kernel.event_listener', attributes: { event: 'kernel.response' } },
+      { name: 'app.named_tag', attributes: { name: 'custom' } },
+    ]);
+    expect(byId.get('App\\MessageHandler\\CreateOrderHandler')?.tagEntries).toEqual([
+      {
+        name: 'messenger.message_handler',
+        attributes: { bus: '', handles: '', method: '', priority: '0', sign: 'false', from_transport: '' },
+      },
+    ]);
+    expect(byId.get('acme_foo.audit_handler')?.tagEntries).toEqual([{ name: 'messenger.message_handler', attributes: {} }]);
   });
 
   it('skips inline services nested in arguments', () => {
@@ -50,7 +66,7 @@ describe('parseContainerXml', () => {
 
   it('handles a container with a single service or none', () => {
     expect(parseContainerXml('<container><services><service id="a" class="A\\B"/></services></container>')).toEqual({
-      services: [{ id: 'a', class: 'A\\B', alias: null, tags: [], location: null }],
+      services: [{ id: 'a', class: 'A\\B', alias: null, tags: [], tagEntries: [], location: null }],
       parameters: [],
     });
     expect(parseContainerXml('<container><services/></container>')).toEqual({ services: [], parameters: [] });

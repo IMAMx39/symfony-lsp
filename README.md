@@ -83,6 +83,11 @@ Intelephense pour la navigation PHP, désactiver php-lsp (`!`) :
 
 `"..."` désigne les autres serveurs activés par défaut.
 
+Les handlers Messenger d'un message s'ouvrent avec **« aller à l'implémentation »**
+(`editor: go to implementation`) sur le nom de sa classe : déclaration, `new Message()`,
+`Message::class` ou type d'un paramètre. `symfony-zed` ne répond que si la classe a des handlers.
+Sur une interface ou une classe parente, Intelephense peut aussi répondre (ses implémentations).
+
 Après `zed: install dev extension`, Zed arrête `symfony-zed` sans toujours le relancer : faire
 `editor: restart language server` (fichier PHP ouvert), ou redémarrer Zed si cela ne suffit pas.
 
@@ -114,7 +119,7 @@ cargo check      # depuis la racine, vérifie l'extension Rust
 | 4 | Traductions : `trans()`, `\|trans`, `{% trans %}`, clés manquantes | En cours |
 | 5 | Doctrine et Forms : repositories, champs d'entité | Prévu |
 | 6 | Paramètres `%param%` et variables d'environnement `%env()%` | Prévu |
-| 7 | Messenger et Event Dispatcher : handlers, listeners, subscribers | Prévu |
+| 7 | Messenger et Event Dispatcher : handlers, listeners, subscribers | En cours |
 | 8 | Sécurité : `security.yaml` | Prévu |
 | 9 | Publication : paquet npm, registre des extensions Zed | Prévu |
 

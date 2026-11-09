@@ -44,6 +44,18 @@
     <service id=".service_locator.Xyz123" class="Symfony\Component\DependencyInjection\ServiceLocator">
       <tag name="container.service_locator"/>
     </service>
+    <service id="App\MessageHandler\CreateOrderHandler" class="App\MessageHandler\CreateOrderHandler" autowire="true" autoconfigure="true">
+      <tag name="messenger.message_handler" bus="" handles="" method="" priority="0" sign="false" from_transport=""/>
+    </service>
+    <service id="App\MessageHandler\StaleHandler" class="App\MessageHandler\StaleHandler" autowire="true" autoconfigure="true">
+      <tag name="messenger.message_handler" bus="" handles="" method="" priority="0" sign="false" from_transport=""/>
+    </service>
+    <service id="acme_foo.audit_handler" class="Acme\FooBundle\Messenger\AuditHandler">
+      <tag name="messenger.message_handler"/>
+    </service>
+    <service id="acme_foo.cancel_logger" class="Acme\FooBundle\Messenger\AuditHandler">
+      <tag name="messenger.message_handler" handles="App\Message\CancelOrder" method="logCancel"/>
+    </service>
     <service id="app.mailer" alias="App\Service\Mailer" public="true"/>
     <service id="app.mailer_short" alias="app.mailer"/>
     <service id="Psr\Log\LoggerInterface" alias="logger"/>

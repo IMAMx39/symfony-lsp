@@ -21,9 +21,13 @@ describe('ServiceIndex', () => {
   it('merges the compiled container and the YAML declarations, without hidden ids', () => {
     expect(index.hasContainer()).toBe(true);
     expect(index.visibleServices().map((service) => service.id).sort()).toEqual([
+      'App\\MessageHandler\\CreateOrderHandler',
+      'App\\MessageHandler\\StaleHandler',
       'App\\Service\\Mailer',
       'App\\Service\\Newsletter',
       'Psr\\Log\\LoggerInterface',
+      'acme_foo.audit_handler',
+      'acme_foo.cancel_logger',
       'app.child_mailer',
       'app.debug_mailer',
       'app.mailer',

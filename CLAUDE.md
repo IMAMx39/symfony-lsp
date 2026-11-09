@@ -40,16 +40,19 @@ symfony-zed/
 │   │   │   ├── TwigLoaderPaths.ts  # Dossiers par namespace, dans l'ordre de TwigBundle
 │   │   │   ├── TemplateResolver.ts # Nom de template → fichier
 │   │   │   ├── ProjectTemplates.ts # Regroupe chemins, résolveur et index d'un projet
-│   │   │   └── classLocation.ts    # Classe (ou méthode) → emplacement, via PSR-4
+│   │   │   ├── classLocation.ts    # Classe (ou méthode) → emplacement, via PSR-4
+│   │   │   └── classSource.ts      # Déclaration d'une classe via PSR-4 (document ouvert prioritaire)
 │   │   ├── routing/                # Extraction des routes : #[Route], YAML, cache compilé
 │   │   ├── services/               # Container XML compilé, services et références `@id` du YAML
 │   │   ├── translations/           # Noms de fichiers domaine.locale.format, messages YAML et XLIFF
 │   │   ├── doctrine/               # DoctrineEntities : repositoryClass, champs mappés (à la demande via PSR-4)
+│   │   ├── messenger/              # Handlers : #[AsMessageHandler], tags messenger.message_handler, type deviné
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
 │   │   │   ├── EnvIndex.ts         # Variables des fichiers .env (ordre de Dotenv::loadEnv)
 │   │   │   ├── RouteIndex.ts
 │   │   │   ├── ServiceIndex.ts
+│   │   │   ├── MessageHandlerIndex.ts  # Handlers de src/ + tags du container/YAML, hiérarchie du message
 │   │   │   └── TranslationIndex.ts
 │   │   ├── parsing/
 │   │   │   ├── parsers.ts          # Init web-tree-sitter (PHP, Twig)
@@ -61,9 +64,11 @@ symfony-zed/
 │   │   │   ├── routes/             # definition, completion, hover, paramètres, diagnostics
 │   │   │   ├── services/           # definition, completion, hover, diagnostics (YAML, #[Autowire])
 │   │   │   ├── translations/       # definition, completion, diagnostics (trans(), |trans, {% trans %})
-│   │   │   └── doctrine/           # definition (getRepository), completion des champs (form types, QueryBuilder)
+│   │   │   ├── doctrine/           # definition (getRepository), completion des champs (form types, QueryBuilder)
+│   │   │   └── messenger/          # implementation : message → handlers
 │   │   └── util/
-│   │       └── paths.ts            # Normalisation chemins/URI cross-platform
+│   │       ├── paths.ts            # Normalisation chemins/URI cross-platform
+│   │       └── phpFiles.ts         # Fichiers .php d'un dossier (vendor/, var/… ignorés)
 │   └── tests/
 │       ├── fixtures/symfony-app/   # Mini projet Symfony réaliste
 │       ├── features/               # Tests par fonctionnalité
@@ -131,6 +136,7 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 | Variables d'environnement | `.env` (ou `.env.dist`), `.env.local` (sauf `test`), `.env.<APP_ENV>`, `.env.<APP_ENV>.local` à la racine, `APP_ENV` lu dans ces fichiers (défaut `dev`) ; plus les `env(NOM)` de `parameters:` / du container. Ni `.env.local.php` ni l'environnement Docker |
 | Traductions | Dossiers `translator.paths` puis `translator.default_path` (défaut `translations/`), récursivement : fichiers `domaine.locale.{yaml,yml,xlf,xliff}` ; locale par défaut `framework.default_locale` (défaut `en`) |
 | Entités Doctrine | Attribut `#[ORM\Entity]` de la classe, lu à la demande dans le fichier trouvé via PSR-4 (pas d'index) |
+| Handlers Messenger | `#[AsMessageHandler]` de `src/**/*.php`, plus les tags `messenger.message_handler` du container dumpé et de `config/services*.yaml` ; message deviné en lisant la classe du handler via PSR-4 (vendor compris) |
 
 ### Résolution des noms de templates
 
@@ -337,6 +343,37 @@ affectation → aucune réponse). Alias : `$this->createQueryBuilder('a')` (enti
 (cible de l'association) ou `->join(X::class, 'b', ...)`. Alias déclaré deux fois différemment, alias inconnu,
 paramètre `:x`, chemin au-delà d'une association, chaîne dynamique : aucune réponse. `.` est un caractère
 déclencheur de complétion.
+
+
+### Messenger
+
+Vérifié dans Messenger / FrameworkBundle 7.4 (`MessengerPass::registerHandlers()` et `guessHandledClasses()`,
+`HandlersLocator::listTypes()`, `registerAttributeForAutoconfiguration(AsMessageHandler::class)`).
+
+`MessageHandlerIndex` réunit :
+1. les `#[AsMessageHandler]` (nom résolu via les `use`, répétable) des classes concrètes de `src/**/*.php` : sur la
+   classe (méthode `method:` ou `__invoke`) ou sur une méthode (cette méthode ; un `method:` y est refusé comme
+   FrameworkBundle). Classe abstraite (exclue par `registerClasses`), `handles` / `method` non littéraux : ignorés.
+   Un document ouvert remplace son fichier ;
+2. les tags `messenger.message_handler` des services (`ServiceIndex.taggedWith()` : container dumpé + YAML, attributs
+   des tags compris). Classe lue via PSR-4, vendor compris (handlers de Mailer, Notifier, bundles…). Si un service a des
+   tags avec attributs, ses tags sans attribut sont ignorés (`array_filter`). Pour une classe de `src/`, les tags du dump
+   portant tous les attributs d'`AsMessageHandler` (`bus`, `from_transport`, `handles`, `method`, `priority`, `sign`)
+   sont ignorés : les sources, plus récentes, font foi.
+
+Message traité : `handles` s'il est donné, sinon le type du 1ᵉʳ paramètre de la méthode (`?Foo` → `Foo`, chaque classe
+d'une union). Méthode non déclarée dans la classe elle-même, paramètre absent, optionnel, variadique, non typé,
+scalaire ou intersection : aucun handler (pas de supposition).
+Handlers d'une classe message : ceux de la classe, de ses parents puis de toutes ses interfaces (via PSR-4, document
+ouvert prioritaire), dans l'ordre de `HandlersLocator` (priorité décroissante au sein d'un type), une fois chacun par
+`Classe::méthode`. Les handlers de `*` sont omis (ils ne disent rien de la classe) ; les jokers `App\Message\*` ne sont
+pas acceptés par `MessengerPass`.
+Les bus et `from_transport` ne filtrent pas la liste.
+
+Position : `textDocument/implementation` sur un nom de classe PHP (déclaration de classe ou d'interface,
+`new X()`, `X::class`, type de paramètre ou de propriété), curseur sur le nom ou juste après. Cible : le nom de la
+méthode du handler (le nom de la classe si la méthode est héritée). Aucun handler : `null`, pour laisser répondre
+les autres serveurs. Limite connue : un handler supprimé hors `src/` mais encore dans un dump périmé reste listé.
 
 ---
 

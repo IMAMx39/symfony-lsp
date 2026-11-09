@@ -1,7 +1,7 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
-import type { ParameterInfo, ServiceInfo } from './types';
+import type { ParameterInfo, ServiceInfo, ServiceTag } from './types';
 
 const ATTRIBUTE_PREFIX = '@_';
 const TEXT_KEY = '#text';
@@ -62,11 +62,13 @@ export function parseContainerXml(source: string): DumpedContainer | null {
       continue;
     }
     const alias = attribute(element, 'alias');
+    const tagEntries = readTags(element);
     services.push({
       id,
       class: alias === null ? (attribute(element, 'class')?.replace(/^\\/, '') ?? null) : null,
       alias,
-      tags: tagNames(element),
+      tags: [...new Set(tagEntries.map((tag) => tag.name))],
+      tagEntries,
       location: null,
     });
   }
@@ -87,20 +89,36 @@ function children(container: unknown, group: string, tag: string): unknown[] {
 }
 
 /**
- * Names of the `<tag>` children of a service. XmlDumper writes the name as text instead of
- * the `name` attribute when the tag has its own `name` attribute.
+ * The `<tag>` children of a service. XmlDumper writes the name as text instead of the `name`
+ * attribute when the tag has its own `name` attribute. Nested attributes (`<attribute>`) are
+ * left out.
  */
-function tagNames(service: unknown): string[] {
+function readTags(service: unknown): ServiceTag[] {
   const tags = isRecord(service) ? service['tag'] : undefined;
-  const names = new Set<string>();
+  const entries: ServiceTag[] = [];
   for (const tag of Array.isArray(tags) ? tags : []) {
-    const text = typeof tag === 'string' ? tag : isRecord(tag) ? tag[TEXT_KEY] : undefined;
-    const name = typeof text === 'string' && text.trim() !== '' ? text.trim() : attribute(tag, 'name');
-    if (name !== null) {
-      names.add(name);
+    if (typeof tag === 'string') {
+      if (tag.trim() !== '') {
+        entries.push({ name: tag.trim(), attributes: {} });
+      }
+      continue;
     }
+    const text = isRecord(tag) ? tag[TEXT_KEY] : undefined;
+    const textName = typeof text === 'string' && text.trim() !== '' ? text.trim() : null;
+    const name = textName ?? attribute(tag, 'name');
+    if (name === null || !isRecord(tag)) {
+      continue;
+    }
+    const attributes: Record<string, string> = {};
+    for (const [key, value] of Object.entries(tag)) {
+      const attributeName = key.startsWith(ATTRIBUTE_PREFIX) ? key.slice(ATTRIBUTE_PREFIX.length) : null;
+      if (attributeName !== null && typeof value === 'string' && (textName !== null || attributeName !== 'name')) {
+        attributes[attributeName] = value;
+      }
+    }
+    entries.push({ name, attributes });
   }
-  return [...names];
+  return entries;
 }
 
 /** Text of a scalar parameter (`<parameter key="x">text</parameter>`), null for a collection. */

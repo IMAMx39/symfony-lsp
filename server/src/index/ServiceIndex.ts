@@ -5,7 +5,7 @@ import type { Parsers } from '../parsing/parsers';
 import { ComposerAutoload } from '../project/ComposerAutoload';
 import { locateClass } from '../project/classLocation';
 import { findContainerXml, parseContainerXml } from '../services/containerXml';
-import type { ParameterInfo, ServiceInfo } from '../services/types';
+import type { ParameterInfo, ServiceInfo, ServiceTag } from '../services/types';
 import { parseServicesYaml, type ServicesYamlFile } from '../services/yamlServices';
 import { isSamePath, pathKey } from '../util/paths';
 
@@ -90,6 +90,18 @@ export class ServiceIndex {
       current = this.get(current.alias);
     }
     return undefined;
+  }
+
+  /** Services (not aliases) carrying a tag, with each application of it, hidden ids included. */
+  taggedWith(tagName: string): Array<{ service: ServiceInfo; tags: ServiceTag[] }> {
+    const tagged: Array<{ service: ServiceInfo; tags: ServiceTag[] }> = [];
+    for (const service of this.data().services.values()) {
+      const tags = service.alias === null ? service.tagEntries.filter((tag) => tag.name === tagName) : [];
+      if (tags.length > 0) {
+        tagged.push({ service, tags });
+      }
+    }
+    return tagged;
   }
 
   /** Visible aliases pointing directly to a service id. */
@@ -210,12 +222,25 @@ export class ServiceIndex {
           class: service.alias === null ? (service.class ?? compiled?.class ?? null) : null,
           // Compiled tags include autoconfigured ones; YAML ones may be newer than the dump.
           tags: service.alias === null ? [...new Set([...(compiled?.tags ?? []), ...service.tags])] : [],
+          tagEntries: service.alias === null ? uniqueTags([...(compiled?.tagEntries ?? []), ...service.tagEntries]) : [],
         });
       }
     }
     this.merged = { services, parameters };
     return this.merged;
   }
+}
+
+/** Tag applications without duplicates (the same tag from the dump and from the YAML). */
+function uniqueTags(tags: readonly ServiceTag[]): ServiceTag[] {
+  const byKey = new Map<string, ServiceTag>();
+  for (const tag of tags) {
+    const key = JSON.stringify([tag.name, Object.entries(tag.attributes).sort(([a], [b]) => a.localeCompare(b))]);
+    if (!byKey.has(key)) {
+      byKey.set(key, tag);
+    }
+  }
+  return [...byKey.values()];
 }
 
 /** MicroKernelTrait::configureContainer(): services.yaml, then services_<env>.yaml. */
