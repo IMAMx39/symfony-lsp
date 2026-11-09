@@ -1,6 +1,6 @@
 import { Query, type Node } from 'web-tree-sitter';
-import { declaredClassName } from '../../messenger/messageHandlers';
 import type { Parsers } from '../../parsing/parsers';
+import { declaredClassName } from '../../parsing/phpDeclarations';
 import { resolveClassName } from '../../parsing/phpNames';
 import messageClassesQuery from '../../parsing/queries/php-message-classes.scm?raw';
 
@@ -12,7 +12,7 @@ export interface ClassNameReference {
 }
 
 /**
- * Class names that may designate a message: class and interface declarations, `new X()`,
+ * Class names that may designate a message or an event: class and interface declarations, `new X()`,
  * `X::class` and type hints, resolved through the namespace and `use` imports of the file.
  */
 export class MessageClassReferenceFinder {

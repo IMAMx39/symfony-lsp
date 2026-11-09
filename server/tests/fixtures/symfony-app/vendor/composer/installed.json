@@ -29,6 +29,17 @@
             "install-path": "../symfony/form"
         },
         {
+            "name": "symfony/http-kernel",
+            "version": "v7.4.0",
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Symfony\\Component\\HttpKernel\\": ""
+                }
+            },
+            "install-path": "../symfony/http-kernel"
+        },
+        {
             "name": "symfony/twig-bridge",
             "version": "v7.1.0",
             "type": "symfony-bridge",

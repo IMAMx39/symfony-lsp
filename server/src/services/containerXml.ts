@@ -1,14 +1,21 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { XMLParser } from 'fast-xml-parser';
-import type { ParameterInfo, ServiceInfo, ServiceTag } from './types';
+import type { CompiledListener, ParameterInfo, ServiceInfo, ServiceTag } from './types';
 
 const ATTRIBUTE_PREFIX = '@_';
 const TEXT_KEY = '#text';
 
+/** Parameter mapping event classes to event names (filled by FrameworkBundle and AddEventAliasesPass). */
+const EVENT_ALIASES_PARAMETER = 'event_dispatcher.event_aliases';
+
 export interface DumpedContainer {
   services: ServiceInfo[];
   parameters: ParameterInfo[];
+  /** `addListener` calls RegisterListenersPass added to the event dispatchers. */
+  listeners: CompiledListener[];
+  /** `event_dispatcher.event_aliases`: event class → event name. */
+  eventAliases: Map<string, string>;
 }
 
 /**
@@ -46,7 +53,7 @@ export function parseContainerXml(source: string): DumpedContainer | null {
       attributeNamePrefix: ATTRIBUTE_PREFIX,
       parseTagValue: false,
       textNodeName: TEXT_KEY,
-      isArray: (tagName) => tagName === 'service' || tagName === 'parameter' || tagName === 'tag',
+      isArray: (tagName) => ['service', 'parameter', 'tag', 'call', 'argument'].includes(tagName),
     }).parse(source);
   } catch {
     return null;
@@ -56,11 +63,13 @@ export function parseContainerXml(source: string): DumpedContainer | null {
     return null;
   }
   const services: ServiceInfo[] = [];
+  const listeners: CompiledListener[] = [];
   for (const element of children(container, 'services', 'service')) {
     const id = attribute(element, 'id');
     if (id === null) {
       continue;
     }
+    listeners.push(...readListenerCalls(element));
     const alias = attribute(element, 'alias');
     const tagEntries = readTags(element);
     services.push({
@@ -73,13 +82,72 @@ export function parseContainerXml(source: string): DumpedContainer | null {
     });
   }
   const parameters: ParameterInfo[] = [];
+  const eventAliases = new Map<string, string>();
   for (const element of children(container, 'parameters', 'parameter')) {
     const name = attribute(element, 'key');
     if (name !== null) {
       parameters.push({ name, value: parameterValue(element), location: null });
     }
+    if (name === EVENT_ALIASES_PARAMETER) {
+      for (const [key, value] of collectionEntries(element)) {
+        eventAliases.set(key.replace(/^\\/, ''), value);
+      }
+    }
   }
-  return { services, parameters };
+  return { services, parameters, listeners, eventAliases };
+}
+
+/**
+ * `<call method="addListener">` of a dispatcher, as RegisterListenersPass writes them:
+ * the event name, then `[service_closure(id), method]`, then the priority.
+ */
+function readListenerCalls(service: unknown): CompiledListener[] {
+  const calls = isRecord(service) ? service['call'] : undefined;
+  const listeners: CompiledListener[] = [];
+  for (const call of Array.isArray(calls) ? calls : []) {
+    if (attribute(call, 'method') !== 'addListener') {
+      continue;
+    }
+    const [event, listener, priority] = argumentsOf(call);
+    const [closure, method] = argumentsOf(listener);
+    const eventName = textOf(event);
+    const methodName = textOf(method);
+    const serviceId = attribute(closure, 'type') === 'service_closure' ? attribute(closure, 'id') : null;
+    const priorityValue = priority === undefined ? 0 : Number(textOf(priority));
+    if (!eventName || !methodName || serviceId === null || attribute(listener, 'type') !== 'collection') {
+      continue;
+    }
+    listeners.push({ event: eventName, serviceId, method: methodName, priority: Number.isInteger(priorityValue) ? priorityValue : 0 });
+  }
+  return listeners;
+}
+
+function argumentsOf(element: unknown): unknown[] {
+  const elements = isRecord(element) ? element['argument'] : undefined;
+  return Array.isArray(elements) ? elements : [];
+}
+
+/** Text of an element: plain text, or the text next to attributes (`<argument type="string">x</argument>`). */
+function textOf(element: unknown): string | null {
+  if (typeof element === 'string') {
+    return element;
+  }
+  const text = isRecord(element) ? element[TEXT_KEY] : undefined;
+  return typeof text === 'string' ? text : null;
+}
+
+/** Keyed scalar entries of a collection parameter (`<parameter key="k">value</parameter>`). */
+function collectionEntries(element: unknown): Array<[string, string]> {
+  const entries = isRecord(element) && attribute(element, 'type') === 'collection' ? element['parameter'] : undefined;
+  const result: Array<[string, string]> = [];
+  for (const entry of Array.isArray(entries) ? entries : []) {
+    const key = attribute(entry, 'key');
+    const value = textOf(entry);
+    if (key !== null && value) {
+      result.push([key, value]);
+    }
+  }
+  return result;
 }
 
 function children(container: unknown, group: string, tag: string): unknown[] {

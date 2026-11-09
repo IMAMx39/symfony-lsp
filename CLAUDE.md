@@ -47,17 +47,20 @@ symfony-zed/
 │   │   ├── translations/           # Noms de fichiers domaine.locale.format, messages YAML et XLIFF
 │   │   ├── doctrine/               # DoctrineEntities : repositoryClass, champs mappés (à la demande via PSR-4)
 │   │   ├── messenger/              # Handlers : #[AsMessageHandler], tags messenger.message_handler, type deviné
+│   │   ├── events/                 # Listeners : #[AsEventListener], getSubscribedEvents(), règles de RegisterListenersPass
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
 │   │   │   ├── EnvIndex.ts         # Variables des fichiers .env (ordre de Dotenv::loadEnv)
 │   │   │   ├── RouteIndex.ts
 │   │   │   ├── ServiceIndex.ts
 │   │   │   ├── MessageHandlerIndex.ts  # Handlers de src/ + tags du container/YAML, hiérarchie du message
+│   │   │   ├── EventListenerIndex.ts   # Listeners de src/ + appels addListener du container dumpé, alias
 │   │   │   └── TranslationIndex.ts
 │   │   ├── parsing/
 │   │   │   ├── parsers.ts          # Init web-tree-sitter (PHP, Twig)
 │   │   │   ├── DocumentTrees.ts    # Arbres des documents ouverts (cache par version)
 │   │   │   ├── literals.ts / phpValues.ts / phpNames.ts  # Littéraux, valeurs, noms de classes
+│   │   │   ├── phpDeclarations.ts  # Classe déclarée, supertypes, méthode, attributs résolus
 │   │   │   └── queries/            # Requêtes tree-sitter (.scm)
 │   │   ├── features/               # Un dossier par fonctionnalité
 │   │   │   ├── templates/          # definition, completion, diagnostics
@@ -65,7 +68,8 @@ symfony-zed/
 │   │   │   ├── services/           # definition, completion, hover, diagnostics (YAML, #[Autowire])
 │   │   │   ├── translations/       # definition, completion, diagnostics (trans(), |trans, {% trans %})
 │   │   │   ├── doctrine/           # definition (getRepository), completion des champs (form types, QueryBuilder)
-│   │   │   └── messenger/          # implementation : message → handlers
+│   │   │   ├── messenger/          # implementation : message → handlers
+│   │   │   └── events/             # implementation : événement → listeners et subscribers
 │   │   └── util/
 │   │       ├── paths.ts            # Normalisation chemins/URI cross-platform
 │   │       └── phpFiles.ts         # Fichiers .php d'un dossier (vendor/, var/… ignorés)
@@ -137,6 +141,7 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 | Traductions | Dossiers `translator.paths` puis `translator.default_path` (défaut `translations/`), récursivement : fichiers `domaine.locale.{yaml,yml,xlf,xliff}` ; locale par défaut `framework.default_locale` (défaut `en`) |
 | Entités Doctrine | Attribut `#[ORM\Entity]` de la classe, lu à la demande dans le fichier trouvé via PSR-4 (pas d'index) |
 | Handlers Messenger | `#[AsMessageHandler]` de `src/**/*.php`, plus les tags `messenger.message_handler` du container dumpé et de `config/services*.yaml` ; message deviné en lisant la classe du handler via PSR-4 (vendor compris) |
+| Listeners d'événements | `#[AsEventListener]` et subscribers de `src/**/*.php` (+ tags non issus d'attributs pour ces classes) ; hors `src/`, appels `addListener` des dispatchers du container dumpé ; alias depuis le paramètre `event_dispatcher.event_aliases` du dump |
 
 ### Résolution des noms de templates
 
@@ -375,6 +380,46 @@ Position : `textDocument/implementation` sur un nom de classe PHP (déclaration 
 méthode du handler (le nom de la classe si la méthode est héritée). Aucun handler : `null`, pour laisser répondre
 les autres serveurs. Limite connue : un handler supprimé hors `src/` mais encore dans un dump périmé reste listé.
 
+### Event Dispatcher
+
+Vérifié dans EventDispatcher / FrameworkBundle 7.4 (`RegisterListenersPass`, `ExtractingEventDispatcher`,
+`EventDispatcher::addSubscriber()`, `AsEventListener`, `registerAttributeForAutoconfiguration(AsEventListener::class)`,
+`registerForAutoconfiguration(EventSubscriberInterface::class)`, `AddEventAliasesPass`).
+
+`EventListenerIndex` réunit :
+1. les sources de `src/**/*.php` (un document ouvert remplace son fichier), classes concrètes seulement :
+   - `#[AsEventListener]` (nom résolu via les `use`, répétable) sur la classe ou sur une méthode (cette méthode ; un
+     `method:` y est refusé comme FrameworkBundle). `event` / `method` non littéraux : attribut ignoré ;
+   - `getSubscribedEvents()` des classes qui déclarent elles-mêmes `implements EventSubscriberInterface` : méthode
+     déclarée dans la classe, corps à un unique `return [...]` (pas de `yield`). Valeurs `'m'`, `['m', prio]`,
+     `[['m', prio], …]` ; entrées non littérales ou `...` ignorées ;
+   - les tags `kernel.event_listener` / `kernel.event_subscriber` des services de ces classes (`ServiceIndex.taggedWith()`),
+     sauf les tags d'attribut du dump (`event`, `method`, `priority`, `dispatcher` tous présents) : les sources font foi ;
+2. pour les classes hors `src/` (vendor, bundles) : les `<call method="addListener">` de tous les services du container
+   dumpé (dispatcher global et dispatchers de firewall), où l'événement, la méthode et la priorité sont déjà résolus.
+   Les appels visant une classe de `src/` sont ignorés (dump potentiellement périmé).
+
+Noms d'événements : chaîne littérale, `Foo::class`, ou `Foo::CONSTANTE` / `self::CONSTANTE` lue via PSR-4 (constante
+déclarée par la classe elle-même, valeur littérale ou `::class`) ; `static::` et `parent::` ne sont pas suivis.
+Les constantes sont lues à la demande (pas figées dans l'index). Alias : `event_dispatcher.event_aliases` du dump
+(classe → nom), appliqués aux listeners comme aux subscribers ; sans dump, aucun alias.
+Règles de `RegisterListenersPass` :
+- sans `event` : tag ignoré si la classe est aussi un subscriber, sinon `method` (défaut `__invoke`) déclarée dans la
+  classe, événements = classes du type du 1ᵉʳ paramètre (classe, `?Foo`, membres classes d'une union ; types natifs et
+  `Symfony\Contracts\EventDispatcher\Event` exclus ; intersection ou aucun : ignoré) ;
+- sans `method` : `on` + nom d'événement (alias appliqué) en camel case (`onKernelRequest`) si la classe la déclare,
+  sinon `__invoke` ; si la classe a un parent ou utilise un trait, la méthode pourrait être héritée : ignoré.
+Résultat : listeners de l'événement (nom après alias), une fois chacun par `Classe::méthode`, priorité décroissante.
+Pas de hiérarchie (le dispatcher n'utilise que le nom exact). Cible : nom de la méthode, ou de la classe si la
+méthode n'est pas déclarée par la classe elle-même.
+
+Positions de `textDocument/implementation` (PHP) : noms de classes (mêmes positions que Messenger : déclaration,
+`new X()`, `X::class`, type), `Foo::CONSTANTE` partout, littéraux en position d'événement : 2ᵉ argument de
+`->dispatch()` (ou `eventName:`), `event` d'`#[AsEventListener]`, clés du `return [...]` de `getSubscribedEvents()`.
+Sur une classe, la réponse réunit handlers Messenger et listeners. Aucun résultat : `null`.
+Limites connues : sans container dumpé, ni listeners du vendor ni alias ; un subscriber dont `getSubscribedEvents()`
+est hérité ou calculé n'est pas lu.
+
 ---
 
 ## Roadmap
@@ -420,7 +465,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 
 ### Phase 7 : Messenger et Event Dispatcher
 - [ ] Message → handlers (`#[AsMessageHandler]`, tag `messenger.message_handler`)
-- [ ] Événement → listeners et subscribers (`#[AsEventListener]`, `getSubscribedEvents()`)
+- [ ] Événement → listeners et subscribers (`#[AsEventListener]`, `getSubscribedEvents()`) — codé, à vérifier dans Zed
 
 ### Phase 8 : sécurité
 - [ ] `security.yaml` : firewalls, providers, `access_control` (routes, rôles)

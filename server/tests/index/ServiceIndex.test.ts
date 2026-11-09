@@ -21,6 +21,7 @@ describe('ServiceIndex', () => {
   it('merges the compiled container and the YAML declarations, without hidden ids', () => {
     expect(index.hasContainer()).toBe(true);
     expect(index.visibleServices().map((service) => service.id).sort()).toEqual([
+      'App\\EventSubscriber\\OrderSubscriber',
       'App\\MessageHandler\\CreateOrderHandler',
       'App\\MessageHandler\\StaleHandler',
       'App\\Service\\Mailer',
@@ -28,6 +29,7 @@ describe('ServiceIndex', () => {
       'Psr\\Log\\LoggerInterface',
       'acme_foo.audit_handler',
       'acme_foo.cancel_logger',
+      'acme_foo.locale_listener',
       'app.child_mailer',
       'app.debug_mailer',
       'app.mailer',
@@ -35,6 +37,8 @@ describe('ServiceIndex', () => {
       'app.mailer_short',
       'app.newsletter',
       'compiled.only',
+      'debug.event_dispatcher',
+      'debug.security.event_dispatcher.main',
       'logger',
       'mailer.transport',
       'service_container',

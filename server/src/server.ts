@@ -16,6 +16,8 @@ import { FormFieldReferenceFinder, type FormFieldReference } from './features/do
 import { provideQueryBuilderCompletion } from './features/doctrine/queryBuilderCompletion';
 import { QueryBuilderReferenceFinder, type QueryBuilderReference } from './features/doctrine/QueryBuilderReferenceFinder';
 import { RepositoryReferenceFinder, type RepositoryReference } from './features/doctrine/RepositoryReferenceFinder';
+import { EventNameReferenceFinder } from './features/events/EventNameReferenceFinder';
+import { provideEventListenerImplementation } from './features/events/implementation';
 import { provideMessageHandlerImplementation } from './features/messenger/implementation';
 import { MessageClassReferenceFinder } from './features/messenger/MessageClassReferenceFinder';
 import { provideRouteNameCompletion } from './features/routes/completion';
@@ -41,6 +43,7 @@ import { TranslationReferenceFinder, type TranslationReference } from './feature
 import { RouteIndex, routeFileKind } from './index/RouteIndex';
 import { SERVICES_ENV, ServiceIndex, serviceFileKind } from './index/ServiceIndex';
 import { EnvIndex } from './index/EnvIndex';
+import { EventListenerIndex } from './index/EventListenerIndex';
 import { MessageHandlerIndex } from './index/MessageHandlerIndex';
 import { TranslationIndex } from './index/TranslationIndex';
 import { DocumentTrees, languageOf } from './parsing/DocumentTrees';
@@ -68,6 +71,7 @@ interface ProjectContext {
   doctrine: DoctrineEntities;
   env: EnvIndex;
   messageHandlers: MessageHandlerIndex;
+  eventListeners: EventListenerIndex;
   reloadTimers: Map<string, NodeJS.Timeout>;
 }
 
@@ -82,6 +86,7 @@ interface ParsingContext {
   formFieldReferences: FormFieldReferenceFinder;
   queryBuilderReferences: QueryBuilderReferenceFinder;
   messageClassReferences: MessageClassReferenceFinder;
+  eventNameReferences: EventNameReferenceFinder;
 }
 
 interface AnalyzedDocument {
@@ -139,6 +144,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       formFieldReferences: new FormFieldReferenceFinder(parsers),
       queryBuilderReferences: new QueryBuilderReferenceFinder(parsers),
       messageClassReferences: new MessageClassReferenceFinder(parsers),
+      eventNameReferences: new EventNameReferenceFinder(parsers),
     };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
@@ -177,7 +183,9 @@ connection.onInitialized(() => {
         connection.console.info(`[EnvIndex] ${env.all().length} environment variables found in .env files`);
         const messageHandlers = new MessageHandlerIndex(project.root, parsing.parsers, services);
         connection.console.info(`[MessageHandlerIndex] ${messageHandlers.attributeHandlerCount()} #[AsMessageHandler] handlers found in src/`);
-        projects.push({ project, templates, routes, services, translations, doctrine, env, messageHandlers, reloadTimers: new Map() });
+        const eventListeners = new EventListenerIndex(project.root, parsing.parsers, services);
+        connection.console.info(`[EventListenerIndex] ${eventListeners.sourceListenerCount()} event listeners declared in src/`);
+        projects.push({ project, templates, routes, services, translations, doctrine, env, messageHandlers, eventListeners, reloadTimers: new Map() });
       }
     }
     if (projects.length > 0) {
@@ -231,8 +239,13 @@ connection.onImplementation((params) => {
       return null;
     }
     const tree = parsing.trees.get(document);
-    const references = tree === null ? [] : parsing.messageClassReferences.find(tree.rootNode);
-    return provideMessageHandlerImplementation(document, params.position, references, context.messageHandlers, openText);
+    const classes = tree === null ? [] : parsing.messageClassReferences.find(tree.rootNode);
+    const eventNames = tree === null ? [] : parsing.eventNameReferences.find(tree.rootNode);
+    const locations = [
+      ...(provideMessageHandlerImplementation(document, params.position, classes, context.messageHandlers, openText) ?? []),
+      ...(provideEventListenerImplementation(document, params.position, classes, eventNames, context.eventListeners, openText) ?? []),
+    ];
+    return locations.length > 0 ? locations : null;
   } catch (error) {
     connection.console.error(`[Implementation] ${formatError(error)}`);
     return null;
@@ -338,6 +351,7 @@ connection.onDidChangeWatchedFiles((params) => {
             context.services.reloadAutoload();
             context.doctrine.reloadAutoload();
             context.messageHandlers.reloadAutoload();
+            context.eventListeners.reloadAutoload();
           });
           break;
         case 'source':
@@ -347,6 +361,7 @@ connection.onDidChangeWatchedFiles((params) => {
           }
           if (!openDocumentFor(file)) {
             context.messageHandlers.updatePhpFile(file, null);
+            context.eventListeners.updatePhpFile(file, null);
           }
           break;
       }
@@ -382,6 +397,7 @@ documents.onDidClose((event) => {
     const file = uriToPath(uri);
     context.services.updateYamlFile(file, null);
     context.messageHandlers.updatePhpFile(file, null);
+    context.eventListeners.updatePhpFile(file, null);
     const routesChanged = context.routes.updatePhpFile(file, null);
     const translationsChanged = context.translations.updateFile(file, null);
     if (routesChanged || translationsChanged) {
@@ -471,8 +487,9 @@ function refreshDocument(uri: string): void {
       revalidateProject(context, uri);
     }
     if (languageOf(uri) === 'php') {
-      // No diagnostics depend on handlers: nothing to revalidate.
+      // No diagnostics depend on handlers or listeners: nothing to revalidate.
       context.messageHandlers.updatePhpFile(uriToPath(uri), document.getText());
+      context.eventListeners.updatePhpFile(uriToPath(uri), document.getText());
     }
     if (context.services.updateYamlFile(uriToPath(uri), document.getText())) {
       revalidateProject(context, uri);

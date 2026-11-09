@@ -3,19 +3,13 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { Node } from 'web-tree-sitter';
 import { phpClassNameValue } from '../doctrine/phpClassNames';
 import { phpStringLiteralValue } from '../parsing/literals';
-import { fileNamespace, resolveClassName } from '../parsing/phpNames';
+import { attributesNamed, declaredClassName, isAbstract, methodNamed, namedTypeClass } from '../parsing/phpDeclarations';
 
 export const AS_MESSAGE_HANDLER = 'Symfony\\Component\\Messenger\\Attribute\\AsMessageHandler';
 export const MESSAGE_HANDLER_TAG = 'messenger.message_handler';
 
 /** Parameters of AsMessageHandler::__construct(), in order (for positional arguments). */
 const ATTRIBUTE_PARAMETERS = ['bus', 'fromTransport', 'handles', 'method', 'priority', 'sign'];
-
-/** Type names that are not classes (ReflectionNamedType::isBuiltin(), plus relative names). */
-const NON_CLASS_TYPES = new Set([
-  'int', 'float', 'string', 'bool', 'array', 'iterable', 'object', 'mixed', 'callable', 'void', 'never', 'null', 'false', 'true',
-  'self', 'static', 'parent',
-]);
 
 /** A `messenger.message_handler` tag, from the container, the YAML or an `#[AsMessageHandler]`. */
 export interface HandlerTag {
@@ -65,7 +59,7 @@ export function findAttributeHandlers(root: Node, uri: string, text: TextDocumen
 /** `messenger.message_handler` tags of a class from its `#[AsMessageHandler]` attributes. */
 function attributeTags(declaration: Node, root: Node): HandlerTag[] {
   const tags: HandlerTag[] = [];
-  for (const attribute of handlerAttributes(declaration, root)) {
+  for (const attribute of attributesNamed(declaration, root, AS_MESSAGE_HANDLER)) {
     const tag = readAttribute(attribute, root);
     if (tag !== null) {
       tags.push(tag);
@@ -77,7 +71,7 @@ function attributeTags(declaration: Node, root: Node): HandlerTag[] {
     if (!member || method === undefined) {
       continue;
     }
-    for (const attribute of handlerAttributes(member, root)) {
+    for (const attribute of attributesNamed(member, root, AS_MESSAGE_HANDLER)) {
       const tag = readAttribute(attribute, root);
       if (tag !== null && tag.method === null) {
         tags.push({ ...tag, method });
@@ -111,41 +105,6 @@ export function classHandlers(declaration: Node, root: Node, uri: string, text: 
   return handlers;
 }
 
-/** What a class-like declaration directly extends and implements, resolved. */
-export interface Supertypes {
-  parent: string | null;
-  interfaces: string[];
-}
-
-/** `extends` of a class (its parent) or of an interface (more interfaces), and `implements`. */
-export function directSupertypes(declaration: Node, root: Node): Supertypes {
-  const supertypes: Supertypes = { parent: null, interfaces: [] };
-  for (const clause of declaration.namedChildren) {
-    if (clause?.type !== 'base_clause' && clause?.type !== 'class_interface_clause') {
-      continue;
-    }
-    const names = clause.namedChildren
-      .filter((name): name is Node => name?.type === 'name' || name?.type === 'qualified_name')
-      .map((name) => resolveClassName(name.text, root));
-    if (clause.type === 'base_clause' && declaration.type === 'class_declaration') {
-      supertypes.parent = names[0] ?? null;
-    } else {
-      supertypes.interfaces.push(...names);
-    }
-  }
-  return supertypes;
-}
-
-/** Fully qualified name of a declaration of the file. */
-export function declaredClassName(declaration: Node, root: Node): string | null {
-  const name = declaration.childForFieldName('name')?.text;
-  if (!name) {
-    return null;
-  }
-  const namespace = fileNamespace(root);
-  return namespace ? `${namespace}\\${name}` : name;
-}
-
 /**
  * Classes of the first parameter's type (MessengerPass::guessHandledClasses()): a class, or the
  * class members of a union (`?Foo` is `Foo`). Null when the method has no required first
@@ -172,14 +131,6 @@ function guessHandledMessages(method: Node, root: Node): string[] | null {
     return classes.length > 0 && classes.every((className): className is string => className !== null) ? classes : null;
   }
   return null;
-}
-
-function namedTypeClass(named: Node, root: Node): string | null {
-  const name = named.namedChildren[0];
-  if ((name?.type !== 'name' && name?.type !== 'qualified_name') || NON_CLASS_TYPES.has(name.text.toLowerCase())) {
-    return null;
-  }
-  return resolveClassName(name.text, root);
 }
 
 /**
@@ -219,34 +170,4 @@ function readAttribute(attribute: Node, root: Node): HandlerTag | null {
     }
   }
   return { handles, method, priority, configured: true };
-}
-
-/** `#[AsMessageHandler]` attributes directly on a declaration (class or method). */
-function handlerAttributes(owner: Node, root: Node): Node[] {
-  const attributes: Node[] = [];
-  for (const list of owner.namedChildren) {
-    if (list?.type !== 'attribute_list') {
-      continue;
-    }
-    for (const attribute of list.descendantsOfType('attribute')) {
-      const name = attribute?.namedChildren[0];
-      if (attribute && name && resolveClassName(name.text, root) === AS_MESSAGE_HANDLER) {
-        attributes.push(attribute);
-      }
-    }
-  }
-  return attributes;
-}
-
-function methodNamed(declaration: Node, name: string): Node | undefined {
-  return (
-    declaration
-      .childForFieldName('body')
-      ?.namedChildren.find((member) => member?.type === 'method_declaration' && member.childForFieldName('name')?.text.toLowerCase() === name.toLowerCase()) ??
-    undefined
-  );
-}
-
-function isAbstract(declaration: Node): boolean {
-  return declaration.namedChildren.some((child) => child?.type === 'abstract_modifier');
 }

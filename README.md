@@ -88,6 +88,12 @@ Les handlers Messenger d'un message s'ouvrent avec **« aller à l'implémentati
 `Message::class` ou type d'un paramètre. `symfony-zed` ne répond que si la classe a des handlers.
 Sur une interface ou une classe parente, Intelephense peut aussi répondre (ses implémentations).
 
+Les listeners et subscribers d'un événement s'ouvrent de la même façon, sur la classe de
+l'événement (`RequestEvent`, `new OrderPlacedEvent()`…), sur une constante (`KernelEvents::REQUEST`)
+ou sur un nom littéral (`->dispatch($event, 'order.placed')`, `#[AsEventListener(event: '...')]`, clés
+de `getSubscribedEvents()`), triés par priorité. Ceux des bundles et du vendor viennent du container
+dumpé dans `var/cache/dev` : sans lui, seuls ceux de `src/` sont listés.
+
 Après `zed: install dev extension`, Zed arrête `symfony-zed` sans toujours le relancer : faire
 `editor: restart language server` (fichier PHP ouvert), ou redémarrer Zed si cela ne suffit pas.
 

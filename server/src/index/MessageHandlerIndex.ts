@@ -3,13 +3,13 @@ import * as path from 'node:path';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import {
   classHandlers,
-  directSupertypes,
   findAttributeHandlers,
   MESSAGE_HANDLER_TAG,
   type HandlerTag,
   type MessageHandler,
 } from '../messenger/messageHandlers';
 import type { Parsers } from '../parsing/parsers';
+import { directSupertypes } from '../parsing/phpDeclarations';
 import { ComposerAutoload } from '../project/ComposerAutoload';
 import { withClassDeclaration, type OpenText } from '../project/classSource';
 import type { ServiceTag } from '../services/types';

@@ -21,6 +21,15 @@ export interface ServiceInfo {
   location: Location | null;
 }
 
+/** A listener registered on an event dispatcher of the compiled container (`addListener` call). */
+export interface CompiledListener {
+  /** Event name, aliases already applied by RegisterListenersPass. */
+  event: string;
+  serviceId: string;
+  method: string;
+  priority: number;
+}
+
 export interface ParameterInfo {
   name: string;
   /** Value as text, null for collections or when not a scalar. */

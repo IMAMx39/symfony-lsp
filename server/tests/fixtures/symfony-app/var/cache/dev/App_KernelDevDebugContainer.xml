@@ -11,6 +11,9 @@
       <parameter>en</parameter>
       <parameter>fr</parameter>
     </parameter>
+    <parameter key="event_dispatcher.event_aliases" type="collection">
+      <parameter key="Symfony\Component\HttpKernel\Event\RequestEvent">kernel.request</parameter>
+    </parameter>
     <parameter key=".kernel.bundles_definition" type="collection">
       <parameter key="FrameworkBundle" type="collection"/>
     </parameter>
@@ -55,6 +58,40 @@
     </service>
     <service id="acme_foo.cancel_logger" class="Acme\FooBundle\Messenger\AuditHandler">
       <tag name="messenger.message_handler" handles="App\Message\CancelOrder" method="logCancel"/>
+    </service>
+    <service id="acme_foo.locale_listener" class="Acme\FooBundle\EventListener\LocaleListener">
+      <tag name="kernel.event_subscriber"/>
+    </service>
+    <service id="App\EventSubscriber\OrderSubscriber" class="App\EventSubscriber\OrderSubscriber" autowire="true" autoconfigure="true">
+      <tag name="kernel.event_subscriber"/>
+    </service>
+    <service id="debug.event_dispatcher" class="Symfony\Component\HttpKernel\Debug\TraceableEventDispatcher">
+      <call method="addListener">
+        <argument>kernel.request</argument>
+        <argument type="collection">
+          <argument type="service_closure" id="acme_foo.locale_listener"/>
+          <argument>onKernelRequest</argument>
+        </argument>
+        <argument>16</argument>
+      </call>
+      <call method="addListener">
+        <argument>kernel.request</argument>
+        <argument type="collection">
+          <argument type="service_closure" id="App\EventSubscriber\OrderSubscriber"/>
+          <argument>onRemovedSinceTheDump</argument>
+        </argument>
+        <argument>0</argument>
+      </call>
+    </service>
+    <service id="debug.security.event_dispatcher.main" class="Symfony\Component\HttpKernel\Debug\TraceableEventDispatcher">
+      <call method="addListener">
+        <argument>Acme\FooBundle\Event\PassportEvent</argument>
+        <argument type="collection">
+          <argument type="service_closure" id="acme_foo.locale_listener"/>
+          <argument>checkPassport</argument>
+        </argument>
+        <argument>-1024</argument>
+      </call>
     </service>
     <service id="app.mailer" alias="App\Service\Mailer" public="true"/>
     <service id="app.mailer_short" alias="app.mailer"/>

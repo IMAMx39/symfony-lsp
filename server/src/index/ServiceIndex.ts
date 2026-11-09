@@ -5,7 +5,7 @@ import type { Parsers } from '../parsing/parsers';
 import { ComposerAutoload } from '../project/ComposerAutoload';
 import { locateClass } from '../project/classLocation';
 import { findContainerXml, parseContainerXml } from '../services/containerXml';
-import type { ParameterInfo, ServiceInfo, ServiceTag } from '../services/types';
+import type { CompiledListener, ParameterInfo, ServiceInfo, ServiceTag } from '../services/types';
 import { parseServicesYaml, type ServicesYamlFile } from '../services/yamlServices';
 import { isSamePath, pathKey } from '../util/paths';
 
@@ -30,6 +30,11 @@ interface ContainerData {
   parameters: Map<string, ParameterInfo>;
 }
 
+interface DumpedEvents {
+  listeners: CompiledListener[];
+  aliases: ReadonlyMap<string, string>;
+}
+
 /**
  * Service ids and parameters of a project, merged from (lowest to highest priority):
  * 1. the container dumped in debug mode, var/cache/dev/*Container.xml (every service, bundles
@@ -40,6 +45,7 @@ interface ContainerData {
  */
 export class ServiceIndex {
   private container: ContainerData | null = null;
+  private events: DumpedEvents = { listeners: [], aliases: new Map() };
   private containerFile: string | null = null;
   private readonly yamlFiles = new Map<string, ServicesYamlFile>();
   /** Keys of the services YAML files whose current content is not valid YAML. */
@@ -102,6 +108,16 @@ export class ServiceIndex {
       }
     }
     return tagged;
+  }
+
+  /** Listeners registered on the event dispatchers of the dumped container (empty without dump). */
+  compiledListeners(): readonly CompiledListener[] {
+    return this.events.listeners;
+  }
+
+  /** `event_dispatcher.event_aliases` of the dumped container: event class → event name. */
+  eventAliases(): ReadonlyMap<string, string> {
+    return this.events.aliases;
   }
 
   /** Visible aliases pointing directly to a service id. */
@@ -167,6 +183,7 @@ export class ServiceIndex {
             services: new Map(dumped.services.map((service) => [service.id, service])),
             parameters: new Map(dumped.parameters.map((parameter) => [parameter.name, parameter])),
           };
+    this.events = { listeners: dumped?.listeners ?? [], aliases: dumped?.eventAliases ?? new Map() };
     this.merged = null;
   }
 

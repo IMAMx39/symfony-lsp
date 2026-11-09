@@ -64,12 +64,36 @@ describe('parseContainerXml', () => {
     expect(byName.has('.kernel.bundles_definition')).toBe(true);
   });
 
+  it('reads the addListener calls of every event dispatcher', () => {
+    const { listeners } = parseContainerXml(fs.readFileSync(path.join(fixtureCache, 'App_KernelDevDebugContainer.xml'), 'utf8'))!;
+    expect(listeners).toEqual([
+      { event: 'kernel.request', serviceId: 'acme_foo.locale_listener', method: 'onKernelRequest', priority: 16 },
+      { event: 'kernel.request', serviceId: 'App\\EventSubscriber\\OrderSubscriber', method: 'onRemovedSinceTheDump', priority: 0 },
+      { event: 'Acme\\FooBundle\\Event\\PassportEvent', serviceId: 'acme_foo.locale_listener', method: 'checkPassport', priority: -1024 },
+    ]);
+  });
+
+  it('reads the event aliases, and skips calls that are not listener registrations', () => {
+    const { eventAliases } = parseContainerXml(fs.readFileSync(path.join(fixtureCache, 'App_KernelDevDebugContainer.xml'), 'utf8'))!;
+    expect(eventAliases).toEqual(new Map([['Symfony\\Component\\HttpKernel\\Event\\RequestEvent', 'kernel.request']]));
+    const xml =
+      '<container><services><service id="d" class="D">' +
+      '<call method="addSubscriber"><argument type="service" id="s"/></call>' +
+      '<call method="addListener"><argument>e</argument><argument type="service" id="s"/></call>' +
+      '<call method="addListener"><argument type="string">true</argument><argument type="collection">' +
+      '<argument type="service_closure" id="s"/><argument>onTrue</argument></argument></call>' +
+      '</service></services></container>';
+    expect(parseContainerXml(xml)?.listeners).toEqual([{ event: 'true', serviceId: 's', method: 'onTrue', priority: 0 }]);
+  });
+
   it('handles a container with a single service or none', () => {
     expect(parseContainerXml('<container><services><service id="a" class="A\\B"/></services></container>')).toEqual({
       services: [{ id: 'a', class: 'A\\B', alias: null, tags: [], tagEntries: [], location: null }],
       parameters: [],
+      listeners: [],
+      eventAliases: new Map(),
     });
-    expect(parseContainerXml('<container><services/></container>')).toEqual({ services: [], parameters: [] });
+    expect(parseContainerXml('<container><services/></container>')).toEqual({ services: [], parameters: [], listeners: [], eventAliases: new Map() });
   });
 
   it('rejects what is not a dumped container', () => {
