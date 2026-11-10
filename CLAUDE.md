@@ -568,7 +568,10 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
       extension qui ne fournit qu'un serveur), licence MIT (`LICENSE` à la racine), textes visibles en anglais
 - [x] Dépôt GitHub public <https://github.com/IMAMx39/symfony-lsp> (auteur des commits : adresse noreply GitHub)
 - [ ] Publication dans `zed-industries/extensions` (sous-module HTTPS sur une branche, entrée `extensions.toml`
-      avec la version d'`extension.toml`, `pnpm sort-extensions`, une PR par extension)
+      avec la version d'`extension.toml`, `pnpm sort-extensions`, une PR par extension) — PR
+      <https://github.com/zed-industries/extensions/pull/8288> ouverte, contrôles et CLA au vert, en attente de revue.
+      Politique IA du registre : la PR, sa description et les réponses aux mainteneurs sont faites par le
+      développeur lui-même (pas d'agent, pas de texte généré).
 
 ---
 
