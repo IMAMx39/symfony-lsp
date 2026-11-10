@@ -17,6 +17,8 @@ import { provideMappingCompletion, provideMappingDefinition } from './features/d
 import { findMappingReferences, type MappingReference } from './features/doctrine/MappingReferenceFinder';
 import { DQL_TOKEN_LEGEND, provideDqlSemanticTokens } from './features/doctrine/dqlSemanticTokens';
 import { provideQueryBuilderCompletion } from './features/doctrine/queryBuilderCompletion';
+import { provideCriteriaCompletion, provideCriteriaDefinition } from './features/doctrine/repositoryCriteria';
+import { RepositoryCriteriaFinder, type CriteriaKeyReference } from './features/doctrine/RepositoryCriteriaFinder';
 import { QueryBuilderReferenceFinder, type QueryBuilderReference } from './features/doctrine/QueryBuilderReferenceFinder';
 import { RepositoryReferenceFinder, type RepositoryReference } from './features/doctrine/RepositoryReferenceFinder';
 import { EventNameReferenceFinder } from './features/events/EventNameReferenceFinder';
@@ -99,6 +101,7 @@ interface ParsingContext {
   messageClassReferences: MessageClassReferenceFinder;
   eventNameReferences: EventNameReferenceFinder;
   roleReferences: RoleReferenceFinder;
+  criteriaReferences: RepositoryCriteriaFinder;
 }
 
 interface AnalyzedDocument {
@@ -117,6 +120,8 @@ interface AnalyzedDocument {
   queryBuilder: QueryBuilderReference[];
   /** `mappedBy` / `inversedBy` / `indexBy` of association attributes (PHP only). */
   mappings: MappingReference[];
+  /** Keys of findBy() / findOneBy() / count() arrays on a repository (PHP only). */
+  criteria: CriteriaKeyReference[];
   /** Literal roles of isGranted() checks (`is_granted()`, `#[IsGranted]`…). */
   roles: RoleReference[];
 }
@@ -169,6 +174,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       messageClassReferences: new MessageClassReferenceFinder(parsers),
       eventNameReferences: new EventNameReferenceFinder(parsers),
       roleReferences: new RoleReferenceFinder(parsers),
+      criteriaReferences: new RepositoryCriteriaFinder(parsers),
     };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
@@ -264,6 +270,7 @@ connection.onDefinition((params) => {
       provideRepositoryDefinition(document, params.position, analyzed.repositories, context.doctrine, openText) ??
       provideQueryBuilderDefinition(document, params.position, analyzed.queryBuilder, context.doctrine, openText) ??
       provideMappingDefinition(document, params.position, analyzed.mappings, context.doctrine, openText) ??
+      provideCriteriaDefinition(document, params.position, analyzed.criteria, context.doctrine, openText) ??
       provideServiceDefinition(document, params.position, analyzed.autowire.services, context.services) ??
       provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services) ??
       provideRoleDefinition(document, params.position, analyzed.roles, context.security)
@@ -375,6 +382,7 @@ connection.onCompletion((params) => {
       provideFormFieldCompletion(document, params.position, analyzed.formFields, context.doctrine, openText) ??
       provideQueryBuilderCompletion(document, params.position, analyzed.queryBuilder, context.doctrine, openText) ??
       provideMappingCompletion(document, params.position, analyzed.mappings, context.doctrine, openText) ??
+      provideCriteriaCompletion(document, params.position, analyzed.criteria, context.doctrine, openText) ??
       provideServiceCompletion(document, params.position, analyzed.autowire.services, context.services.visibleServices()) ??
       provideEnvCompletion(document, params.position, analyzed.autowire.env, context.env.all(), context.services.visibleParameters()) ??
       provideParameterCompletion(document, params.position, analyzed.autowire.parameters, context.services.visibleParameters())
@@ -512,6 +520,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     formFields: language === 'php' ? parsing.formFieldReferences.find(tree.rootNode) : [],
     queryBuilder: language === 'php' ? parsing.queryBuilderReferences.find(tree.rootNode) : [],
     mappings: language === 'php' ? findMappingReferences(tree.rootNode) : [],
+    criteria: language === 'php' ? parsing.criteriaReferences.find(tree.rootNode) : [],
     roles: parsing.roleReferences.find(language, tree.rootNode),
   };
 }

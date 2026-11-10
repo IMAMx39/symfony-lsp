@@ -369,6 +369,15 @@ QueryBuilder (mêmes méthodes, plus `from` pour son alias) : alias connu → `v
 (insensible à la casse) → `keyword`, identifiant suivi de `(` → `function`. Les chaînes DQL (`'...'`) sont ignorées.
 Demande `"semantic_tokens": "combined"` dans les settings Zed (voir « Tester dans Zed »).
 
+Critères des repositories (`RepositoryCriteriaFinder`) : clés littérales des tableaux de `findBy()` / `findOneBy()`
+(critères en 1ᵉʳ ou `criteria:`, tri en 2ᵉ ou `orderBy:`) et `count()` (critères), y compris un élément sans `=>` en
+cours de saisie. Le receveur doit être reconnu : `->getRepository(X)`, `$this` (classe repository), `$this->prop` typé
+par une propriété ou un paramètre promu, paramètre typé `Foo` / `?Foo` jamais réaffecté, ou variable affectée une seule
+fois depuis `->getRepository(X)` dans la même fonction ; entité d'un repository lue comme pour le QueryBuilder. Sinon
+(variable non typée, autre classe que repository) : aucune réponse. Complétion : colonnes, associations to-one
+(`ManyToOne`, `OneToOne`) et colonnes des embedded (`warehouse.city`) ; pas les to-many, refusées par Doctrine.
+Définition : propriété, colonne de l'embedded pour `a.b`. Pas de diagnostic.
+
 
 ### Messenger
 
@@ -537,6 +546,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [ ] Définition dans le QueryBuilder : `alias.champ` → propriété, alias → entité — codé, à vérifier dans Zed
 - [ ] `mappedBy` / `inversedBy` / `indexBy` des associations : définition et complétion — codé, à vérifier dans Zed
 - [ ] Coloration du DQL (semantic tokens, `"semantic_tokens": "combined"` dans Zed) — alias vérifiés dans Zed, reste à vérifier
+- [ ] Clés de `findBy()` / `findOneBy()` / `count()` : définition et complétion — codé, à vérifier dans Zed
 
 ### Phase 6 : paramètres et variables d'environnement
 - [x] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)

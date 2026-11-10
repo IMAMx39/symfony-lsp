@@ -22,18 +22,26 @@ export class RepositoryReferenceFinder {
     const references: RepositoryReference[] = [];
     for (const match of this.query.matches(root)) {
       const args = match.captures.find((capture) => capture.name === 'arguments')?.node;
-      const list = args?.namedChildren.filter((arg): arg is Node => arg?.type === 'argument') ?? [];
-      const [first] = list;
-      const argumentName = first?.childForFieldName('name')?.text;
-      if (!first || (argumentName !== undefined && argumentName !== 'className' && argumentName !== 'persistentObject')) {
-        continue;
-      }
-      const value = first.namedChildren[first.namedChildren.length - 1];
-      const entityClass = value ? phpClassNameValue(value, root) : null;
-      if (value && entityClass !== null) {
-        references.push({ entityClass, start: value.startIndex, end: value.endIndex });
+      const reference = args ? repositoryArgument(args, root) : null;
+      if (reference) {
+        references.push(reference);
       }
     }
     return references;
   }
+}
+
+/**
+ * The entity named by the arguments of a `getRepository()` call: first positional argument, or
+ * `className:` (ObjectManager) / `persistentObject:` (ManagerRegistry), as `X::class` or a string.
+ */
+export function repositoryArgument(args: Node, root: Node): RepositoryReference | null {
+  const [first] = args.namedChildren.filter((arg): arg is Node => arg?.type === 'argument');
+  const argumentName = first?.childForFieldName('name')?.text;
+  if (!first || (argumentName !== undefined && argumentName !== 'className' && argumentName !== 'persistentObject')) {
+    return null;
+  }
+  const value = first.namedChildren[first.namedChildren.length - 1];
+  const entityClass = value ? phpClassNameValue(value, root) : null;
+  return value && entityClass !== null ? { entityClass, start: value.startIndex, end: value.endIndex } : null;
 }
