@@ -566,7 +566,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [ ] Paquet npm du serveur et installation via `zed::npm_install_package` dans `lib.rs` — codé, paquet à publier
 - [x] Règles du registre Zed et licence : id `symfony-lsp` (sans `zed` ni `extension`, suffixe `-lsp` pour une
       extension qui ne fournit qu'un serveur), licence MIT (`LICENSE` à la racine), textes visibles en anglais
-- [x] Dépôt GitHub public <https://github.com/IMAMx39/symfony-lsp> (commits signés avec l'adresse noreply GitHub)
+- [x] Dépôt GitHub public <https://github.com/IMAMx39/symfony-lsp> (auteur des commits : adresse noreply GitHub)
 - [ ] Publication dans `zed-industries/extensions` (sous-module HTTPS sur une branche, entrée `extensions.toml`
       avec la version d'`extension.toml`, `pnpm sort-extensions`, une PR par extension)
 
