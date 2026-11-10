@@ -21,6 +21,9 @@ import { provideEventListenerImplementation } from './features/events/implementa
 import { provideMessageHandlerImplementation } from './features/messenger/implementation';
 import { MessageClassReferenceFinder } from './features/messenger/MessageClassReferenceFinder';
 import { provideRouteNameCompletion } from './features/routes/completion';
+import { provideEntityPropertyCompletion, provideSecurityProviderCompletion } from './features/security/completion';
+import { provideSecurityDefinition } from './features/security/definition';
+import { provideSecurityDiagnostics } from './features/security/diagnostics';
 import { provideRouteDefinition } from './features/routes/definition';
 import { provideRouteDiagnostics } from './features/routes/diagnostics';
 import { provideRouteHover } from './features/routes/hover';
@@ -49,10 +52,12 @@ import { TranslationIndex } from './index/TranslationIndex';
 import { DocumentTrees, languageOf } from './parsing/DocumentTrees';
 import { bundledGrammarFiles, Parsers } from './parsing/parsers';
 import { ProjectTemplates } from './project/ProjectTemplates';
+import { SECURITY_ENV, SecurityConfig } from './project/SecurityConfig';
 import { SymfonyProject } from './project/SymfonyProject';
 import { MAIN_NAMESPACE } from './project/TwigLoaderPaths';
 import type { EnvReference } from './services/envPlaceholders';
 import type { ParameterReference } from './services/parameterPlaceholders';
+import { findSecurityReferences, type SecurityReferences } from './security/securityYaml';
 import { findYamlEnvReferences, findYamlParameterReferences, type YamlParameterScope } from './services/yamlParameterReferences';
 import { findClassReferences, findServiceReferences, type ServiceReference } from './services/yamlServices';
 import { isInsidePath, pathKey, uriToPath } from './util/paths';
@@ -72,6 +77,7 @@ interface ProjectContext {
   env: EnvIndex;
   messageHandlers: MessageHandlerIndex;
   eventListeners: EventListenerIndex;
+  security: SecurityConfig;
   reloadTimers: Map<string, NodeJS.Timeout>;
 }
 
@@ -109,6 +115,13 @@ interface AnalyzedServicesYaml {
   document: TextDocument;
   context: ProjectContext;
   references: ServiceReference[];
+}
+
+/** An open YAML file of the security configuration, with the references of its `security:` blocks. */
+interface AnalyzedSecurityYaml {
+  document: TextDocument;
+  context: ProjectContext;
+  references: SecurityReferences;
 }
 
 /** An open YAML configuration file (services, packages, routes) with its `%param%` placeholders. */
@@ -185,7 +198,12 @@ connection.onInitialized(() => {
         connection.console.info(`[MessageHandlerIndex] ${messageHandlers.attributeHandlerCount()} #[AsMessageHandler] handlers found in src/`);
         const eventListeners = new EventListenerIndex(project.root, parsing.parsers, services);
         connection.console.info(`[EventListenerIndex] ${eventListeners.sourceListenerCount()} event listeners declared in src/`);
-        projects.push({ project, templates, routes, services, translations, doctrine, env, messageHandlers, eventListeners, reloadTimers: new Map() });
+        const security = new SecurityConfig(project.root);
+        connection.console.info(
+          `[SecurityConfig] ${security.providers().length} user providers declared` +
+            (security.isCertain() ? '' : ' (incomplete: unknown providers are not reported)'),
+        );
+        projects.push({ project, templates, routes, services, translations, doctrine, env, messageHandlers, eventListeners, security, reloadTimers: new Map() });
       }
     }
     if (projects.length > 0) {
@@ -199,6 +217,14 @@ connection.onInitialized(() => {
 
 connection.onDefinition((params) => {
   try {
+    const securityYaml = analyzeSecurityYaml(params.textDocument.uri);
+    if (securityYaml) {
+      const { document, context, references } = securityYaml;
+      const location = provideSecurityDefinition(document, params.position, references, context.security, context.services, context.doctrine, openText);
+      if (location) {
+        return location;
+      }
+    }
     const configYaml = analyzeConfigYaml(params.textDocument.uri);
     const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
     if (servicesYaml) {
@@ -254,6 +280,13 @@ connection.onImplementation((params) => {
 
 connection.onHover((params) => {
   try {
+    const securityYaml = analyzeSecurityYaml(params.textDocument.uri);
+    const securityHover =
+      securityYaml &&
+      provideServiceHover(securityYaml.document, params.position, securityYaml.references.services, securityYaml.context.services, securityYaml.context.project.root);
+    if (securityHover) {
+      return securityHover;
+    }
     const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
     if (servicesYaml) {
       const { document, context, references } = servicesYaml;
@@ -280,7 +313,12 @@ connection.onCompletion((params) => {
     if (configYaml) {
       const { document, context, parameters, env } = configYaml;
       const servicesYaml = analyzeServicesYaml(params.textDocument.uri);
+      const securityYaml = analyzeSecurityYaml(params.textDocument.uri);
+      const security = securityYaml?.references;
       return (
+        (security && provideSecurityProviderCompletion(document, params.position, security, context.security.providers())) ??
+        (security && provideEntityPropertyCompletion(document, params.position, security, context.doctrine, openText)) ??
+        (security && provideServiceCompletion(document, params.position, security.services, context.services.visibleServices())) ??
         (servicesYaml && provideServiceCompletion(document, params.position, servicesYaml.references, context.services.visibleServices())) ??
         provideEnvCompletion(document, params.position, env, context.env.all(), context.services.visibleParameters()) ??
         provideParameterCompletion(document, params.position, parameters, context.services.visibleParameters())
@@ -335,6 +373,12 @@ connection.onDidChangeWatchedFiles((params) => {
         touched.add(context);
       }
       if (!openDocumentFor(file) && context.translations.updateFile(file, null)) {
+        touched.add(context);
+      }
+      if (!openDocumentFor(file) && context.security.updateFile(file, null)) {
+        touched.add(context);
+      } else if (/\.php$/i.test(file) && ProjectTemplates.isConfigFile(file, context.project.root)) {
+        // A PHP configuration file makes the security configuration uncertain.
         touched.add(context);
       }
 
@@ -396,11 +440,12 @@ documents.onDidClose((event) => {
   if (context) {
     const file = uriToPath(uri);
     context.services.updateYamlFile(file, null);
+    const securityChanged = context.security.updateFile(file, null);
     context.messageHandlers.updatePhpFile(file, null);
     context.eventListeners.updatePhpFile(file, null);
     const routesChanged = context.routes.updatePhpFile(file, null);
     const translationsChanged = context.translations.updateFile(file, null);
-    if (routesChanged || translationsChanged) {
+    if (routesChanged || translationsChanged || securityChanged) {
       revalidateProject(context);
     }
   }
@@ -438,6 +483,16 @@ function analyzeServicesYaml(uri: string): AnalyzedServicesYaml | null {
     return null;
   }
   return { document, context, references: findServiceReferences(document.getText(), SERVICES_ENV) };
+}
+
+/** An open YAML file of the security configuration, with the references of its `security:` blocks. */
+function analyzeSecurityYaml(uri: string): AnalyzedSecurityYaml | null {
+  const document = documents.get(uri);
+  const context = document && projectFor(uri);
+  if (!document || !context || !SecurityConfig.isConfigFile(uriToPath(uri), context.project.root)) {
+    return null;
+  }
+  return { document, context, references: findSecurityReferences(document.getText(), SECURITY_ENV) };
 }
 
 function analyzeConfigYaml(uri: string): AnalyzedConfigYaml | null {
@@ -494,6 +549,9 @@ function refreshDocument(uri: string): void {
     if (context.services.updateYamlFile(uriToPath(uri), document.getText())) {
       revalidateProject(context, uri);
     }
+    if (context.security.updateFile(uriToPath(uri), document.getText())) {
+      revalidateProject(context, uri);
+    }
     if (context.translations.updateFile(uriToPath(uri), document.getText())) {
       revalidateProject(context, uri);
     }
@@ -504,10 +562,14 @@ function refreshDocument(uri: string): void {
 }
 
 function publishDiagnostics(uri: string): void {
-  const servicesYaml = analyzeServicesYaml(uri);
-  if (servicesYaml) {
-    const { document, context, references } = servicesYaml;
-    const diagnostics = provideServiceDiagnostics(document, references, context.services);
+  const securityYaml = analyzeSecurityYaml(uri);
+  if (securityYaml) {
+    const { document, context, references } = securityYaml;
+    const servicesYaml = analyzeServicesYaml(uri);
+    const diagnostics = [
+      ...(servicesYaml ? provideServiceDiagnostics(document, servicesYaml.references, context.services) : []),
+      ...provideSecurityDiagnostics(document, references, context.security, context.services),
+    ];
     void connection.sendDiagnostics({ uri, version: document.version, diagnostics });
     return;
   }

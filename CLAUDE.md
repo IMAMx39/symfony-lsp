@@ -37,6 +37,7 @@ symfony-zed/
 │   │   │   ├── packageConfig.ts    # Lecture des YAML de config/packages (+ dev/, when@dev)
 │   │   │   ├── TwigConfig.ts       # Lecture twig.yaml (default_path, paths, when@dev)
 │   │   │   ├── TranslatorConfig.ts # framework.default_locale, translator.paths / default_path
+│   │   │   ├── SecurityConfig.ts   # Providers déclarés sous security: (packages, services*.yaml), certitude
 │   │   │   ├── TwigLoaderPaths.ts  # Dossiers par namespace, dans l'ordre de TwigBundle
 │   │   │   ├── TemplateResolver.ts # Nom de template → fichier
 │   │   │   ├── ProjectTemplates.ts # Regroupe chemins, résolveur et index d'un projet
@@ -48,6 +49,7 @@ symfony-zed/
 │   │   ├── doctrine/               # DoctrineEntities : repositoryClass, champs mappés (à la demande via PSR-4)
 │   │   ├── messenger/              # Handlers : #[AsMessageHandler], tags messenger.message_handler, type deviné
 │   │   ├── events/                 # Listeners : #[AsEventListener], getSubscribedEvents(), règles de RegisterListenersPass
+│   │   ├── security/               # Blocs security: du YAML : providers déclarés, références (providers, services, classes)
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
 │   │   │   ├── EnvIndex.ts         # Variables des fichiers .env (ordre de Dotenv::loadEnv)
@@ -69,14 +71,15 @@ symfony-zed/
 │   │   │   ├── translations/       # definition, completion, diagnostics (trans(), |trans, {% trans %})
 │   │   │   ├── doctrine/           # definition (getRepository), completion des champs (form types, QueryBuilder)
 │   │   │   ├── messenger/          # implementation : message → handlers
-│   │   │   └── events/             # implementation : événement → listeners et subscribers
+│   │   │   ├── events/             # implementation : événement → listeners et subscribers
+│   │   │   └── security/           # definition, completion, diagnostics dans security.yaml
 │   │   └── util/
 │   │       ├── paths.ts            # Normalisation chemins/URI cross-platform
 │   │       └── phpFiles.ts         # Fichiers .php d'un dossier (vendor/, var/… ignorés)
 │   └── tests/
 │       ├── fixtures/symfony-app/   # Mini projet Symfony réaliste
 │       ├── features/               # Tests par fonctionnalité
-│       ├── index/ project/ routing/ services/ translations/ util/
+│       ├── index/ project/ routing/ security/ services/ translations/ util/
 └── CLAUDE.md
 ```
 
@@ -141,6 +144,7 @@ serveur, lance Node et transmet les options. Tout le reste vit dans `server/`.
 | Traductions | Dossiers `translator.paths` puis `translator.default_path` (défaut `translations/`), récursivement : fichiers `domaine.locale.{yaml,yml,xlf,xliff}` ; locale par défaut `framework.default_locale` (défaut `en`) |
 | Entités Doctrine | Attribut `#[ORM\Entity]` de la classe, lu à la demande dans le fichier trouvé via PSR-4 (pas d'index) |
 | Handlers Messenger | `#[AsMessageHandler]` de `src/**/*.php`, plus les tags `messenger.message_handler` du container dumpé et de `config/services*.yaml` ; message deviné en lisant la classe du handler via PSR-4 (vendor compris) |
+| Configuration de sécurité | Blocs `security:` (racine et `when@dev`) des YAML de `config/packages/`, `config/packages/dev/`, `config/services.yaml` et `config/services_dev.yaml` ; les configs PHP ne sont pas lues |
 | Listeners d'événements | `#[AsEventListener]` et subscribers de `src/**/*.php` (+ tags non issus d'attributs pour ces classes) ; hors `src/`, appels `addListener` des dispatchers du container dumpé ; alias depuis le paramètre `event_dispatcher.event_aliases` du dump |
 
 ### Résolution des noms de templates
@@ -420,6 +424,37 @@ Sur une classe, la réponse réunit handlers Messenger et listeners. Aucun résu
 Limites connues : sans container dumpé, ni listeners du vendor ni alias ; un subscriber dont `getSubscribedEvents()`
 est hérité ou calculé n'est pas lu.
 
+### Sécurité
+
+Vérifié dans SecurityBundle 7.4 (`MainConfiguration`, `SecurityExtension::createUserProviders()` / `getUserProvider()`,
+`AbstractFactory`, `CustomAuthenticatorFactory`, `HttpUtils`, `EntityFactory` de doctrine-bridge).
+
+`SecurityConfig` lit les blocs `security:` (racine puis `when@dev`) de tous les YAML que `MicroKernelTrait` charge :
+`config/packages/*`, `config/packages/dev/*` (triés), `config/services.yaml`, `config/services_dev.yaml` (n'importe lequel
+peut contenir de la config d'extension). Un document ouvert remplace son fichier ; un YAML invalide garde les
+déclarations précédentes.
+
+Références reconnues (`security/securityYaml.ts`), seulement pour les scalaires dont le texte source est la valeur (simple
+ou entre guillemets sans échappement, sur une ligne) ; une valeur vide compte pour la complétion :
+- **providers** : `provider:` d'un firewall, `provider:` de chacun de ses blocs (authenticators d'`AbstractFactory`,
+  `http_basic`, `x509`, `remote_user`, `login_link`, `switch_user`), éléments de `chain.providers` (séquence, ou chaîne
+  découpée sur `,` comme `MainConfiguration`). Comparaison souple (`providerKey` : `-` lu comme `_`, casse ignorée) :
+  sur-ensemble des noms que `SecurityExtension` résout (firewall : `str_replace('-', '_')` ; chaîne : `strtolower()`) ;
+- **services** (sans `@`) : `id` d'un provider, `user_checker`, `access_denied_handler`, `custom_authenticators[]`,
+  `success_handler` / `failure_handler` d'un bloc, `entry_point` sauf s'il nomme une clé du firewall (`form_login`) ;
+  un id qui est un nom de classe à namespace est aussi une référence de classe ;
+- **entité** : `entity.class` (classe via PSR-4) et `entity.property` (champs mappés `Column`, pas les associations :
+  `EntityUserProvider` cherche par `findOneBy([property => identifiant])`).
+Définition : déclaration du provider, champ de l'entité, service (comme dans `services.yaml`) puis classe. Complétion :
+providers (une fois par nom, type en détail), champs, ids de service. Survol : celui des services.
+
+Diagnostic « provider inconnu » (Warning, code `security-provider-not-found`, `SecurityExtension` lève une exception) seulement
+si `SecurityConfig.isCertain()` : aucun `.php` dans `config/packages/` ni `config/packages/dev/`, pas de `services.php` à la
+place de `services.yaml`, tous les YAML valides et sans `imports:`. Les ids de service suivent le diagnostic
+`service-not-found` (mêmes conditions) ; `entry_point` n'en a pas (`RegisterEntryPointPass` accepte aussi des clés).
+Limites connues : une valeur vide après une virgule dans une séquence en ligne (`[a, ]`) n'a pas de nœud, donc pas de
+complétion avant la première lettre ; un bundle qui ajoute un provider par `prepend` n'est pas vu.
+
 ---
 
 ## Roadmap
@@ -468,7 +503,10 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [ ] Événement → listeners et subscribers (`#[AsEventListener]`, `getSubscribedEvents()`) — codé, à vérifier dans Zed
 
 ### Phase 8 : sécurité
-- [ ] `security.yaml` : firewalls, providers, `access_control` (routes, rôles)
+- [ ] `security.yaml` : providers (définition, complétion, diagnostic), entité du provider, services des firewalls — codé, à vérifier dans Zed
+- [ ] `security.yaml` : routes des firewalls (`login_path`, `check_path`…) et `access_control[].route`
+- [ ] `security.yaml` : rôles (`role_hierarchy`, `access_control[].roles`, `switch_user.role`)
+- [ ] Rôles dans le code : `is_granted()` (Twig), `#[IsGranted]`, `->isGranted()`, `->denyAccessUnlessGranted()`
 
 ### Phase 9 : publication
 - [ ] Paquet npm du serveur et installation via `zed::npm_install_package` dans `lib.rs`

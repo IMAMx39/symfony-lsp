@@ -1,0 +1,43 @@
+security:
+    providers:
+        app_user_provider:
+            entity:
+                class: App\Entity\User
+                property: email
+        memory-users:
+            memory:
+                users:
+                    admin: { password: secret, roles: ROLE_ADMIN }
+        all_users:
+            chain:
+                providers: [app_user_provider, memory-users]
+
+    firewalls:
+        dev:
+            pattern: ^/(_profiler|_wdt)/
+            security: false
+        main:
+            lazy: true
+            provider: app_user_provider
+            user_checker: App\Security\UserChecker
+            form_login:
+                login_path: app_login
+                check_path: app_login
+                provider: all_users
+            logout:
+                path: app_logout
+
+    access_control:
+        - { path: ^/admin, roles: ROLE_ADMIN }
+
+when@dev:
+    security:
+        providers:
+            dev_users:
+                id: App\Security\UserChecker
+
+when@prod:
+    security:
+        providers:
+            prod_users:
+                memory: ~
