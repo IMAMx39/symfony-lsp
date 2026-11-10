@@ -15,6 +15,7 @@ import { provideFormFieldCompletion } from './features/doctrine/formFieldComplet
 import { FormFieldReferenceFinder, type FormFieldReference } from './features/doctrine/FormFieldReferenceFinder';
 import { provideMappingCompletion, provideMappingDefinition } from './features/doctrine/mappingOptions';
 import { findMappingReferences, type MappingReference } from './features/doctrine/MappingReferenceFinder';
+import { DQL_TOKEN_LEGEND, provideDqlSemanticTokens } from './features/doctrine/dqlSemanticTokens';
 import { provideQueryBuilderCompletion } from './features/doctrine/queryBuilderCompletion';
 import { QueryBuilderReferenceFinder, type QueryBuilderReference } from './features/doctrine/QueryBuilderReferenceFinder';
 import { RepositoryReferenceFinder, type RepositoryReference } from './features/doctrine/RepositoryReferenceFinder';
@@ -179,6 +180,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       implementationProvider: true,
       hoverProvider: true,
       completionProvider: { triggerCharacters: ["'", '"', '/', '@', '%', '.'] },
+      semanticTokensProvider: { legend: DQL_TOKEN_LEGEND, full: true },
     },
     serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
   };
@@ -290,6 +292,21 @@ connection.onImplementation((params) => {
   } catch (error) {
     connection.console.error(`[Implementation] ${formatError(error)}`);
     return null;
+  }
+});
+
+connection.languages.semanticTokens.on((params) => {
+  try {
+    const document = documents.get(params.textDocument.uri);
+    const tree = document && parsing && languageOf(document.uri) === 'php' && projectFor(document.uri) ? parsing.trees.get(document) : null;
+    if (!document || !parsing || !tree) {
+      return { data: [] };
+    }
+    const context = projectFor(document.uri);
+    return context ? provideDqlSemanticTokens(document, parsing.queryBuilderReferences.find(tree.rootNode), context.doctrine, openText) : { data: [] };
+  } catch (error) {
+    connection.console.error(`[SemanticTokens] ${formatError(error)}`);
+    return { data: [] };
   }
 });
 

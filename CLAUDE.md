@@ -363,6 +363,12 @@ nommés ou positionnels (`ManyToOne` : `inversedBy` 4ᵉ ; `OneToOne` : `mappedB
 (`::class` ou chaîne), sinon type de la propriété pour un to-one ; sans cible, aucune réponse. Définition : propriété de
 la cible. Complétion : associations de la cible (`mappedBy` / `inversedBy`), colonnes (`indexBy`). Pas de diagnostic.
 
+Coloration du DQL (`dqlSemanticTokens.ts`, `textDocument/semanticTokens/full`, PHP seulement) dans les chaînes du
+QueryBuilder (mêmes méthodes, plus `from` pour son alias) : alias connu → `variable`, champ résolu après un alias
+(`resolveDqlField`) → `property` (un champ inconnu reste non coloré), `:nom` / `?1` → `parameter`, mot réservé DQL
+(insensible à la casse) → `keyword`, identifiant suivi de `(` → `function`. Les chaînes DQL (`'...'`) sont ignorées.
+Demande `"semantic_tokens": "combined"` dans les settings Zed (voir « Tester dans Zed »).
+
 
 ### Messenger
 
@@ -530,7 +536,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
 - [ ] Définition dans le QueryBuilder : `alias.champ` → propriété, alias → entité — codé, à vérifier dans Zed
 - [ ] `mappedBy` / `inversedBy` / `indexBy` des associations : définition et complétion — codé, à vérifier dans Zed
-- [ ] Coloration du DQL (semantic tokens, `"semantic_tokens": "combined"` dans Zed)
+- [ ] Coloration du DQL (semantic tokens, `"semantic_tokens": "combined"` dans Zed) — alias vérifiés dans Zed, reste à vérifier
 
 ### Phase 6 : paramètres et variables d'environnement
 - [x] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)
@@ -630,8 +636,13 @@ cargo check
      "symfony-zed": {
        "settings": { "server_path": "C:\\chemin\\vers\\symfony-zed\\server\\dist\\server.js" }
      }
+   },
+   "languages": {
+     "PHP": { "semantic_tokens": "combined" }
    }
    ```
+   `semantic_tokens` est désactivé par défaut dans Zed : sans lui, le DQL n'est pas coloré. Zed fusionne les tokens de
+   tous les serveurs d'un fichier (Intelephense + symfony-zed) ; changer ce réglage demande de redémarrer le serveur.
 4. Ouvrir un projet Symfony, puis `dev: open language server logs` pour voir les logs du serveur
 5. Après une modification du serveur : rebuild, puis redémarrer le serveur LSP depuis la palette
 
