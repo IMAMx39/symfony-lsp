@@ -27,6 +27,8 @@ describe('RouteIndex', () => {
       'app_dashboard',
       'app_hero',
       'app_home',
+      'app_login',
+      'app_logout',
       'app_missing',
       'blog_app_blog_feed',
       'blog_archive',

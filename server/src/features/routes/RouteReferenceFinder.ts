@@ -23,11 +23,17 @@ export interface RouteParameters {
   values: Array<{ start: number; end: number }>;
 }
 
-/** A literal route name in a document. Offsets cover the literal including its quotes. */
-export interface RouteReference {
+/** A route name. `start`/`end` cover the literal or scalar (quotes included), `nameStart`/`nameEnd` the name alone. */
+export interface RouteNameReference {
   name: string;
   start: number;
   end: number;
+  nameStart: number;
+  nameEnd: number;
+}
+
+/** A literal route name in a PHP or Twig document (quoted, without escapes). */
+export interface RouteReference extends RouteNameReference {
   language: DocumentLanguage;
   parameters: RouteParameters | null;
 }
@@ -70,6 +76,8 @@ function phpReference(args: Node): RouteReference | null {
     name,
     start: nameNode.startIndex,
     end: nameNode.endIndex,
+    nameStart: nameNode.startIndex + 1,
+    nameEnd: nameNode.endIndex - 1,
     language: 'php',
     parameters: parametersNode?.type === 'array_creation_expression' ? phpParameters(parametersNode) : null,
   };
@@ -85,6 +93,8 @@ function twigReference(args: Node): RouteReference | null {
     name,
     start: first.startIndex,
     end: first.endIndex,
+    nameStart: first.startIndex + 1,
+    nameEnd: first.endIndex - 1,
     language: 'twig',
     parameters: second?.type === 'object' ? twigParameters(second) : null,
   };

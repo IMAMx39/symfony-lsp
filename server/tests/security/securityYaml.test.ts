@@ -121,6 +121,59 @@ describe('findSecurityReferences', () => {
   });
 });
 
+describe('findSecurityReferences: routes', () => {
+  it('reads route names of the firewall options and of access_control', () => {
+    const source = [
+      'security:',
+      '    firewalls:',
+      '        main:',
+      '            access_denied_url: app_denied',
+      '            form_login: { login_path: app_login, check_path: "app_check", default_target_path: app_home, failure_path: app_failure }',
+      '            json_login: { check_path: api_login }',
+      '            login_link: { check_route: link_check }',
+      '            switch_user: { target_route: app_home }',
+      '            logout: { path: app_logout, target: app_bye }',
+      '            remember_me: { path: not_a_route }',
+      '    access_control:',
+      '        - { route: admin_index, roles: ROLE_ADMIN }',
+      '        - { path: ^/admin, roles: ROLE_ADMIN }',
+      'when@dev:',
+      '    security:',
+      '        access_control:',
+      '            - { route: dev_route }',
+      '',
+    ].join('\n');
+    expect(names(source, findSecurityReferences(source, 'dev').routes)).toEqual([
+      'app_denied',
+      'app_login',
+      'app_check',
+      'app_home',
+      'app_failure',
+      'api_login',
+      'link_check',
+      'app_home',
+      'app_logout',
+      'app_bye',
+      'admin_index',
+      'dev_route',
+    ]);
+  });
+
+  it('skips paths, absolute URLs and parameters where a path is allowed, not route-only options', () => {
+    const source = [
+      'security:',
+      '    firewalls:',
+      '        main:',
+      '            form_login: { login_path: /login, check_path: "https://sso.example.com/check", default_target_path: "%app.home%" }',
+      '            logout: { path: /logout, target: "//cdn" }',
+      '            switch_user: { target_route: /not/a/path }',
+      '',
+    ].join('\n');
+    // `//cdn` starts with `/`: HttpUtils reads it as a path.
+    expect(names(source, findSecurityReferences(source, 'dev').routes)).toEqual(['/not/a/path']);
+  });
+});
+
 describe('providerKey', () => {
   it('reads dashes as underscores and ignores case', () => {
     expect(providerKey('Memory-Users')).toBe(providerKey('memory_users'));

@@ -1,9 +1,9 @@
 import type { Location, Position } from 'vscode-languageserver';
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { RouteIndex } from '../../index/RouteIndex';
-import type { RouteReference } from './RouteReferenceFinder';
+import type { RouteNameReference } from './RouteReferenceFinder';
 
-export function findRouteReferenceAt(references: readonly RouteReference[], offset: number): RouteReference | undefined {
+export function findRouteReferenceAt<T extends RouteNameReference>(references: readonly T[], offset: number): T | undefined {
   return references.find((reference) => offset >= reference.start && offset < reference.end);
 }
 
@@ -11,7 +11,7 @@ export function findRouteReferenceAt(references: readonly RouteReference[], offs
 export function provideRouteDefinition(
   document: TextDocument,
   position: Position,
-  references: readonly RouteReference[],
+  references: readonly RouteNameReference[],
   index: RouteIndex,
 ): Location | null {
   const reference = findRouteReferenceAt(references, document.offsetAt(position));

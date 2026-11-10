@@ -4,7 +4,7 @@ import type { RouteIndex } from '../../index/RouteIndex';
 import { displayPath } from '../../routing/routePath';
 import { displayFilePath, uriToPath } from '../../util/paths';
 import { findRouteReferenceAt } from './definition';
-import type { RouteReference } from './RouteReferenceFinder';
+import type { RouteNameReference } from './RouteReferenceFinder';
 
 /**
  * Markdown summary of the route under the cursor:
@@ -13,7 +13,7 @@ import type { RouteReference } from './RouteReferenceFinder';
 export function provideRouteHover(
   document: TextDocument,
   position: Position,
-  references: readonly RouteReference[],
+  references: readonly RouteNameReference[],
   index: RouteIndex,
   projectRoot: string,
 ): Hover | null {

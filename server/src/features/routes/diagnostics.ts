@@ -2,7 +2,7 @@ import { DiagnosticSeverity, Range, type Diagnostic } from 'vscode-languageserve
 import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { RouteIndex } from '../../index/RouteIndex';
 import { DIAGNOSTIC_SOURCE } from '../templates/diagnostics';
-import type { RouteReference } from './RouteReferenceFinder';
+import type { RouteNameReference } from './RouteReferenceFinder';
 
 export const ROUTE_NOT_FOUND = 'route-not-found';
 
@@ -12,7 +12,7 @@ export const ROUTE_NOT_FOUND = 'route-not-found';
  */
 export function provideRouteDiagnostics(
   document: TextDocument,
-  references: readonly RouteReference[],
+  references: readonly RouteNameReference[],
   index: RouteIndex,
 ): Diagnostic[] {
   if (!index.isCertain()) {

@@ -11,6 +11,12 @@ const NAMESPACED_CLASS = /^[A-Za-z_\x7f-￿][\w\x7f-￿]*(?:\\[A-Za-z_\x7f-￿][
 const FIREWALL_SERVICE_KEYS = ['user_checker', 'access_denied_handler'];
 /** Options of an authenticator block (AbstractFactory) holding a service id used as a parent definition. */
 const AUTHENTICATOR_SERVICE_KEYS = ['success_handler', 'failure_handler'];
+/** Options of an authenticator block read through HttpUtils (generateUri / checkRequestPath): a path or a route name. */
+const AUTHENTICATOR_ROUTE_OR_PATH_KEYS = ['login_path', 'check_path', 'default_target_path', 'failure_path'];
+/** Options holding a route name only, by block: passed to UrlGenerator::generate(). */
+const ROUTE_ONLY_KEYS: Readonly<Record<string, string>> = { login_link: 'check_route', switch_user: 'target_route' };
+/** An absolute URL, which HttpUtils::generateUri() returns as is (`parse_url()` gives a scheme and a host). */
+const ABSOLUTE_URL = /^[A-Za-z][A-Za-z0-9+.-]*:\/\/[^/]/;
 
 /** A user provider declared under `security.providers`. */
 export interface ProviderDeclaration {
@@ -47,6 +53,13 @@ export interface SecurityReferences {
   /** Entity class of a provider, and service ids that are class names. */
   classes: ClassReference[];
   entityProperties: EntityPropertyReference[];
+  /**
+   * Route names: `access_control[].route`, `login_link.check_route`, `switch_user.target_route`, and the
+   * values HttpUtils reads as a route when they are neither a path (`/...`) nor an absolute URL:
+   * `login_path`, `check_path`, `default_target_path`, `failure_path` of an authenticator,
+   * `logout.path`, `logout.target`, `access_denied_url`. Values with a `%parameter%` are skipped.
+   */
+  routes: NameReference[];
 }
 
 /**
@@ -104,7 +117,14 @@ export function hasImports(source: string, env: string): boolean {
  * escapes, on one line), plus empty values for completion. Works on files being edited.
  */
 export function findSecurityReferences(source: string, env: string): SecurityReferences {
-  const references: SecurityReferences = { providers: [], services: [], classes: [], entityProperties: [] };
+  const references: SecurityReferences = { providers: [], services: [], classes: [], entityProperties: [], routes: [] };
+  const addRoute = (node: unknown, pathAllowed: boolean): void => {
+    const text = textOf(node, source);
+    if (text === null || text.name.includes('%') || (pathAllowed && (text.name.startsWith('/') || ABSOLUTE_URL.test(text.name)))) {
+      return;
+    }
+    references.routes.push(text);
+  };
   const addService = (node: unknown, optional: boolean): void => {
     const text = textOf(node, source);
     if (text === null) {
@@ -160,6 +180,7 @@ export function findSecurityReferences(source: string, env: string): SecurityRef
       }
       const options = firewall.value;
       addProvider(options.get('provider', true));
+      addRoute(options.get('access_denied_url', true), true);
       FIREWALL_SERVICE_KEYS.forEach((key) => addService(options.get(key, true), false));
       // The entry point is an authenticator key of the firewall (`form_login`) or a service id;
       // RegisterEntryPointPass reports errors itself, so a missing one is not diagnosed.
@@ -176,7 +197,28 @@ export function findSecurityReferences(source: string, env: string): SecurityRef
         if (isMap(block.value)) {
           // Authenticators (AbstractFactory, HttpBasicFactory…) and switch_user take a provider.
           addProvider(block.value.get('provider', true));
-          AUTHENTICATOR_SERVICE_KEYS.forEach((key) => addService((block.value as YAMLMap).get(key, true), false));
+          const blockOptions = block.value;
+          AUTHENTICATOR_SERVICE_KEYS.forEach((key) => addService(blockOptions.get(key, true), false));
+          const blockName = scalarString(block.key);
+          if (blockName === 'logout') {
+            ['path', 'target'].forEach((key) => addRoute(blockOptions.get(key, true), true));
+          } else {
+            AUTHENTICATOR_ROUTE_OR_PATH_KEYS.forEach((key) => addRoute(blockOptions.get(key, true), true));
+          }
+          const routeOnly = blockName === null ? undefined : ROUTE_ONLY_KEYS[blockName];
+          if (routeOnly !== undefined) {
+            addRoute(blockOptions.get(routeOnly, true), false);
+          }
+        }
+      }
+    }
+
+    const accessControl = security.get('access_control', true);
+    if (isSeq(accessControl)) {
+      for (const rule of accessControl.items) {
+        if (isMap(rule)) {
+          // RequestMatcher on the `_route` attribute (SecurityExtension::createAuthorization()).
+          addRoute(rule.get('route', true), false);
         }
       }
     }

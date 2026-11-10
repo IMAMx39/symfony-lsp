@@ -220,7 +220,9 @@ connection.onDefinition((params) => {
     const securityYaml = analyzeSecurityYaml(params.textDocument.uri);
     if (securityYaml) {
       const { document, context, references } = securityYaml;
-      const location = provideSecurityDefinition(document, params.position, references, context.security, context.services, context.doctrine, openText);
+      const location =
+        provideRouteDefinition(document, params.position, references.routes, context.routes) ??
+        provideSecurityDefinition(document, params.position, references, context.security, context.services, context.doctrine, openText);
       if (location) {
         return location;
       }
@@ -283,7 +285,8 @@ connection.onHover((params) => {
     const securityYaml = analyzeSecurityYaml(params.textDocument.uri);
     const securityHover =
       securityYaml &&
-      provideServiceHover(securityYaml.document, params.position, securityYaml.references.services, securityYaml.context.services, securityYaml.context.project.root);
+      (provideRouteHover(securityYaml.document, params.position, securityYaml.references.routes, securityYaml.context.routes, securityYaml.context.project.root) ??
+        provideServiceHover(securityYaml.document, params.position, securityYaml.references.services, securityYaml.context.services, securityYaml.context.project.root));
     if (securityHover) {
       return securityHover;
     }
@@ -319,6 +322,7 @@ connection.onCompletion((params) => {
         (security && provideSecurityProviderCompletion(document, params.position, security, context.security.providers())) ??
         (security && provideEntityPropertyCompletion(document, params.position, security, context.doctrine, openText)) ??
         (security && provideServiceCompletion(document, params.position, security.services, context.services.visibleServices())) ??
+        (security && provideRouteNameCompletion(document, params.position, security.routes, context.routes.visibleRoutes())) ??
         (servicesYaml && provideServiceCompletion(document, params.position, servicesYaml.references, context.services.visibleServices())) ??
         provideEnvCompletion(document, params.position, env, context.env.all(), context.services.visibleParameters()) ??
         provideParameterCompletion(document, params.position, parameters, context.services.visibleParameters())
@@ -569,6 +573,7 @@ function publishDiagnostics(uri: string): void {
     const diagnostics = [
       ...(servicesYaml ? provideServiceDiagnostics(document, servicesYaml.references, context.services) : []),
       ...provideSecurityDiagnostics(document, references, context.security, context.services),
+      ...provideRouteDiagnostics(document, references.routes, context.routes),
     ];
     void connection.sendDiagnostics({ uri, version: document.version, diagnostics });
     return;

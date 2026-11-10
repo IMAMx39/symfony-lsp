@@ -444,9 +444,15 @@ ou entre guillemets sans échappement, sur une ligne) ; une valeur vide compte p
   `success_handler` / `failure_handler` d'un bloc, `entry_point` sauf s'il nomme une clé du firewall (`form_login`) ;
   un id qui est un nom de classe à namespace est aussi une référence de classe ;
 - **entité** : `entity.class` (classe via PSR-4) et `entity.property` (champs mappés `Column`, pas les associations :
-  `EntityUserProvider` cherche par `findOneBy([property => identifiant])`).
-Définition : déclaration du provider, champ de l'entité, service (comme dans `services.yaml`) puis classe. Complétion :
-providers (une fois par nom, type en détail), champs, ids de service. Survol : celui des services.
+  `EntityUserProvider` cherche par `findOneBy([property => identifiant])`) ;
+- **routes** : noms seuls pour `access_control[].route` (attribut `_route` du `RequestMatcher`), `login_link.check_route`
+  et `switch_user.target_route` (passés à `UrlGenerator::generate()`). Route ou chemin, lus par `HttpUtils` : `login_path`,
+  `check_path`, `default_target_path`, `failure_path` d'un bloc d'authenticator, `logout.path`, `logout.target`,
+  `access_denied_url` ; c'est un nom de route sauf si la valeur commence par `/` (`//hôte` compris) ou est une URL absolue
+  (schéma + hôte, comme `parse_url()` dans `generateUri()`). Valeur contenant `%` : aucune réponse.
+Définition : route (comme en PHP/Twig), déclaration du provider, champ de l'entité, service (comme dans `services.yaml`)
+puis classe. Complétion : providers (une fois par nom, type en détail), champs, ids de service, noms de route.
+Survol : celui des routes et des services. Les noms de route ont le diagnostic `route-not-found` (`RouteIndex.isCertain()`).
 
 Diagnostic « provider inconnu » (Warning, code `security-provider-not-found`, `SecurityExtension` lève une exception) seulement
 si `SecurityConfig.isCertain()` : aucun `.php` dans `config/packages/` ni `config/packages/dev/`, pas de `services.php` à la
@@ -504,7 +510,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 
 ### Phase 8 : sécurité
 - [ ] `security.yaml` : providers (définition, complétion, diagnostic), entité du provider, services des firewalls — codé, à vérifier dans Zed
-- [ ] `security.yaml` : routes des firewalls (`login_path`, `check_path`…) et `access_control[].route`
+- [ ] `security.yaml` : routes des firewalls (`login_path`, `check_path`…) et `access_control[].route` — codé, à vérifier dans Zed
 - [ ] `security.yaml` : rôles (`role_hierarchy`, `access_control[].roles`, `switch_user.role`)
 - [ ] Rôles dans le code : `is_granted()` (Twig), `#[IsGranted]`, `->isGranted()`, `->denyAccessUnlessGranted()`
 
