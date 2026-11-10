@@ -13,6 +13,8 @@ import { DoctrineEntities } from './doctrine/DoctrineEntities';
 import { provideQueryBuilderDefinition, provideRepositoryDefinition } from './features/doctrine/definition';
 import { provideFormFieldCompletion } from './features/doctrine/formFieldCompletion';
 import { FormFieldReferenceFinder, type FormFieldReference } from './features/doctrine/FormFieldReferenceFinder';
+import { provideMappingCompletion, provideMappingDefinition } from './features/doctrine/mappingOptions';
+import { findMappingReferences, type MappingReference } from './features/doctrine/MappingReferenceFinder';
 import { provideQueryBuilderCompletion } from './features/doctrine/queryBuilderCompletion';
 import { QueryBuilderReferenceFinder, type QueryBuilderReference } from './features/doctrine/QueryBuilderReferenceFinder';
 import { RepositoryReferenceFinder, type RepositoryReference } from './features/doctrine/RepositoryReferenceFinder';
@@ -112,6 +114,8 @@ interface AnalyzedDocument {
   formFields: FormFieldReference[];
   /** DQL string literals of QueryBuilder calls (PHP only). */
   queryBuilder: QueryBuilderReference[];
+  /** `mappedBy` / `inversedBy` / `indexBy` of association attributes (PHP only). */
+  mappings: MappingReference[];
   /** Literal roles of isGranted() checks (`is_granted()`, `#[IsGranted]`…). */
   roles: RoleReference[];
 }
@@ -257,6 +261,7 @@ connection.onDefinition((params) => {
       provideTranslationDefinition(document, params.position, analyzed.translations, context.translations) ??
       provideRepositoryDefinition(document, params.position, analyzed.repositories, context.doctrine, openText) ??
       provideQueryBuilderDefinition(document, params.position, analyzed.queryBuilder, context.doctrine, openText) ??
+      provideMappingDefinition(document, params.position, analyzed.mappings, context.doctrine, openText) ??
       provideServiceDefinition(document, params.position, analyzed.autowire.services, context.services) ??
       provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services) ??
       provideRoleDefinition(document, params.position, analyzed.roles, context.security)
@@ -352,6 +357,7 @@ connection.onCompletion((params) => {
       provideTranslationCompletion(document, params.position, analyzed.translations, context.translations) ??
       provideFormFieldCompletion(document, params.position, analyzed.formFields, context.doctrine, openText) ??
       provideQueryBuilderCompletion(document, params.position, analyzed.queryBuilder, context.doctrine, openText) ??
+      provideMappingCompletion(document, params.position, analyzed.mappings, context.doctrine, openText) ??
       provideServiceCompletion(document, params.position, analyzed.autowire.services, context.services.visibleServices()) ??
       provideEnvCompletion(document, params.position, analyzed.autowire.env, context.env.all(), context.services.visibleParameters()) ??
       provideParameterCompletion(document, params.position, analyzed.autowire.parameters, context.services.visibleParameters())
@@ -488,6 +494,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     repositories: language === 'php' ? parsing.repositoryReferences.find(tree.rootNode) : [],
     formFields: language === 'php' ? parsing.formFieldReferences.find(tree.rootNode) : [],
     queryBuilder: language === 'php' ? parsing.queryBuilderReferences.find(tree.rootNode) : [],
+    mappings: language === 'php' ? findMappingReferences(tree.rootNode) : [],
     roles: parsing.roleReferences.find(language, tree.rootNode),
   };
 }

@@ -356,6 +356,13 @@ Définition dans ces mêmes chaînes (`features/doctrine/dqlPaths.ts`) : un segm
 `alias.embedded.champ`) mène à la propriété mappée (parents et traits compris), un alias à la classe de son entité.
 Chemins reconnus : identifiants séparés par `.`, hors paramètres (`:x`, `?1`), noms de classe (`\`) et variables.
 
+Options des associations (`MappingReferenceFinder`, constructeurs vérifiés dans Doctrine ORM 3.6) : littéraux
+`mappedBy`, `inversedBy` et `indexBy` de `ManyToOne`, `OneToOne`, `OneToMany`, `ManyToMany` (nom résolu via les `use`),
+nommés ou positionnels (`ManyToOne` : `inversedBy` 4ᵉ ; `OneToOne` : `mappedBy` 2ᵉ, `inversedBy` 3ᵉ ; `OneToMany` :
+`mappedBy` 2ᵉ, `indexBy` 6ᵉ ; `ManyToMany` : `mappedBy` 2ᵉ, `inversedBy` 3ᵉ, `indexBy` 7ᵉ). Cible : `targetEntity`
+(`::class` ou chaîne), sinon type de la propriété pour un to-one ; sans cible, aucune réponse. Définition : propriété de
+la cible. Complétion : associations de la cible (`mappedBy` / `inversedBy`), colonnes (`indexBy`). Pas de diagnostic.
+
 
 ### Messenger
 
@@ -522,7 +529,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] `getRepository(Entity::class)` → repository
 - [x] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
 - [ ] Définition dans le QueryBuilder : `alias.champ` → propriété, alias → entité — codé, à vérifier dans Zed
-- [ ] `mappedBy` / `inversedBy` / `indexBy` des associations : définition et complétion
+- [ ] `mappedBy` / `inversedBy` / `indexBy` des associations : définition et complétion — codé, à vérifier dans Zed
 - [ ] Coloration du DQL (semantic tokens, `"semantic_tokens": "combined"` dans Zed)
 
 ### Phase 6 : paramètres et variables d'environnement

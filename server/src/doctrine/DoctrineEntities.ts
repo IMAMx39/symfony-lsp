@@ -8,7 +8,7 @@ import { locateClass } from '../project/classLocation';
 import { withClassDeclaration, type OpenText, type ParsedClass } from '../project/classSource';
 import { phpClassNameValue } from './phpClassNames';
 
-const MAPPING = 'Doctrine\\ORM\\Mapping\\';
+export const MAPPING = 'Doctrine\\ORM\\Mapping\\';
 const ENTITY = `${MAPPING}Entity`;
 const MAPPED_SUPERCLASS = `${MAPPING}MappedSuperclass`;
 const EMBEDDABLE = `${MAPPING}Embeddable`;
@@ -16,7 +16,7 @@ const COLUMN = `${MAPPING}Column`;
 const EMBEDDED = `${MAPPING}Embedded`;
 const ASSOCIATIONS = ['ManyToOne', 'OneToOne', 'OneToMany', 'ManyToMany'].map((name) => `${MAPPING}${name}`);
 /** Associations whose target Doctrine infers from the property type when `targetEntity` is omitted. */
-const TO_ONE = [`${MAPPING}ManyToOne`, `${MAPPING}OneToOne`];
+export const TO_ONE = [`${MAPPING}ManyToOne`, `${MAPPING}OneToOne`];
 
 /** Depth limit for parents and traits (guards against cycles). */
 const MAX_DEPTH = 8;
@@ -200,7 +200,7 @@ function declaredFields(declaration: Node, root: Node, uri: string, text: TextDo
 }
 
 /** `?Category`, `Category|null` → the class name; null for scalars, unions of classes, intersections. */
-function singleClassType(typeNode: Node, root: Node): string | null {
+export function singleClassType(typeNode: Node, root: Node): string | null {
   const names = typeNode.text
     .replace(/^\?/, '')
     .split('|')
@@ -219,14 +219,14 @@ function isBuiltinType(name: string): boolean {
   );
 }
 
-interface MappingAttribute {
+export interface MappingAttribute {
   /** Resolved class name. */
   name: string;
   node: Node;
 }
 
 /** Attributes of a declaration (class, property, parameter) whose name resolves under Doctrine\ORM\Mapping. */
-function mappingAttributes(owner: Node, root: Node): MappingAttribute[] {
+export function mappingAttributes(owner: Node, root: Node): MappingAttribute[] {
   const attributes: MappingAttribute[] = [];
   for (const list of owner.namedChildren) {
     if (list?.type !== 'attribute_list') {
@@ -247,7 +247,7 @@ function mappingAttributes(owner: Node, root: Node): MappingAttribute[] {
  * Value of an attribute argument, named or at a position. Undefined when absent; the node may
  * be anything (the caller checks it is a literal).
  */
-function attributeArgument(attribute: Node, name: string, position: number): Node | undefined {
+export function attributeArgument(attribute: Node, name: string, position: number): Node | undefined {
   const args = attribute.childForFieldName('parameters')?.namedChildren.filter((arg): arg is Node => arg?.type === 'argument') ?? [];
   const argument = args.find((arg) => arg.childForFieldName('name')?.text === name) ?? positional(args, position);
   return argument?.namedChildren[argument.namedChildren.length - 1] ?? undefined;
