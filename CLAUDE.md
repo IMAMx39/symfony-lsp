@@ -563,7 +563,7 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Rôles dans le code : `is_granted()` (Twig), `#[IsGranted]`, `->isGranted()`, `->denyAccessUnlessGranted()`
 
 ### Phase 9 : publication
-- [ ] Paquet npm du serveur et installation via `zed::npm_install_package` dans `lib.rs` — codé, paquet à publier
+- [ ] Paquet npm du serveur et installation via `zed::npm_install_package` dans `lib.rs` — paquet publié (<https://www.npmjs.com/package/symfony-lsp>), installation par l'extension à vérifier dans Zed
 - [x] Règles du registre Zed et licence : id `symfony-lsp` (sans `zed` ni `extension`, suffixe `-lsp` pour une
       extension qui ne fournit qu'un serveur), licence MIT (`LICENSE` à la racine), textes visibles en anglais
 - [x] Dépôt GitHub public <https://github.com/IMAMx39/symfony-lsp> (auteur des commits : adresse noreply GitHub)
