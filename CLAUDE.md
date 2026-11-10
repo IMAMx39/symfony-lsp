@@ -352,6 +352,9 @@ affectation → aucune réponse). Alias : `$this->createQueryBuilder('a')` (enti
 (cible de l'association) ou `->join(X::class, 'b', ...)`. Alias déclaré deux fois différemment, alias inconnu,
 paramètre `:x`, chemin au-delà d'une association, chaîne dynamique : aucune réponse. `.` est un caractère
 déclencheur de complétion.
+Définition dans ces mêmes chaînes (`features/doctrine/dqlPaths.ts`) : un segment de `alias.champ` (ou
+`alias.embedded.champ`) mène à la propriété mappée (parents et traits compris), un alias à la classe de son entité.
+Chemins reconnus : identifiants séparés par `.`, hors paramètres (`:x`, `?1`), noms de classe (`\`) et variables.
 
 
 ### Messenger
@@ -518,6 +521,9 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 ### Phase 5 : Doctrine et Forms
 - [x] `getRepository(Entity::class)` → repository
 - [x] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
+- [ ] Définition dans le QueryBuilder : `alias.champ` → propriété, alias → entité — codé, à vérifier dans Zed
+- [ ] `mappedBy` / `inversedBy` / `indexBy` des associations : définition et complétion
+- [ ] Coloration du DQL (semantic tokens, `"semantic_tokens": "combined"` dans Zed)
 
 ### Phase 6 : paramètres et variables d'environnement
 - [x] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)

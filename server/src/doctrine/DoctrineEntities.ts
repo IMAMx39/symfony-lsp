@@ -67,6 +67,11 @@ export class DoctrineEntities {
     });
   }
 
+  /** Declaration of a class through PSR-4 (open documents are not needed for a location). */
+  classLocation(className: string): Location | null {
+    return locateClass(this.autoload, this.parsers, className);
+  }
+
   /** Declaration of the repository class of an entity. */
   repositoryLocation(entityClass: string, openText?: OpenText): Location | null {
     const repository = this.repositoryClassOf(entityClass, openText);

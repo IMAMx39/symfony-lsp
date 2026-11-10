@@ -10,7 +10,7 @@ import {
 } from 'vscode-languageserver/node';
 import { TextDocument } from 'vscode-languageserver-textdocument';
 import { DoctrineEntities } from './doctrine/DoctrineEntities';
-import { provideRepositoryDefinition } from './features/doctrine/definition';
+import { provideQueryBuilderDefinition, provideRepositoryDefinition } from './features/doctrine/definition';
 import { provideFormFieldCompletion } from './features/doctrine/formFieldCompletion';
 import { FormFieldReferenceFinder, type FormFieldReference } from './features/doctrine/FormFieldReferenceFinder';
 import { provideQueryBuilderCompletion } from './features/doctrine/queryBuilderCompletion';
@@ -256,6 +256,7 @@ connection.onDefinition((params) => {
       provideRouteDefinition(document, params.position, analyzed.routes, context.routes) ??
       provideTranslationDefinition(document, params.position, analyzed.translations, context.translations) ??
       provideRepositoryDefinition(document, params.position, analyzed.repositories, context.doctrine, openText) ??
+      provideQueryBuilderDefinition(document, params.position, analyzed.queryBuilder, context.doctrine, openText) ??
       provideServiceDefinition(document, params.position, analyzed.autowire.services, context.services) ??
       provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services) ??
       provideRoleDefinition(document, params.position, analyzed.roles, context.security)
