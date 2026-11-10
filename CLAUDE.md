@@ -589,7 +589,10 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - Paquet npm (`server/package.json`) : bundle esbuild sans dépendance d'exécution (toutes en
   `devDependencies`), `files` = `dist/server.js` + `dist/*.wasm`, `prepublishOnly` = lint + tests + build.
   La version de `serverInfo` est celle du paquet, injectée au build (`__SERVER_VERSION__`).
-- Une nouvelle version = même numéro dans `extension.toml`, `Cargo.toml` et `server/package.json`.
+- Versions : celle de l'extension est dans `extension.toml` et `Cargo.toml` (identiques, à monter pour toute
+  modification de `lib.rs` ou du manifeste). Le paquet npm du serveur a la sienne (`server/package.json`) :
+  l'extension installe toujours la dernière, une correction du serveur ne demande donc qu'une publication npm.
+  Le README de la page npm est `server/README.md`.
 - Toujours lancer Node via `zed::node_binary_path()`, ne jamais supposer `node` dans le PATH.
 - Transmettre `--stdio` au serveur.
 
