@@ -49,7 +49,7 @@ symfony-zed/
 │   │   ├── doctrine/               # DoctrineEntities : repositoryClass, champs mappés (à la demande via PSR-4)
 │   │   ├── messenger/              # Handlers : #[AsMessageHandler], tags messenger.message_handler, type deviné
 │   │   ├── events/                 # Listeners : #[AsEventListener], getSubscribedEvents(), règles de RegisterListenersPass
-│   │   ├── security/               # Blocs security: du YAML : providers déclarés, références (providers, services, classes)
+│   │   ├── security/               # Blocs security: du YAML : déclarations (providers, role_hierarchy), références
 │   │   ├── index/
 │   │   │   ├── TemplateIndex.ts
 │   │   │   ├── EnvIndex.ts         # Variables des fichiers .env (ordre de Dotenv::loadEnv)
@@ -72,7 +72,7 @@ symfony-zed/
 │   │   │   ├── doctrine/           # definition (getRepository), completion des champs (form types, QueryBuilder)
 │   │   │   ├── messenger/          # implementation : message → handlers
 │   │   │   ├── events/             # implementation : événement → listeners et subscribers
-│   │   │   └── security/           # definition, completion, diagnostics dans security.yaml
+│   │   │   └── security/           # security.yaml (definition, completion, hover, diagnostics), rôles en PHP/Twig
 │   │   └── util/
 │   │       ├── paths.ts            # Normalisation chemins/URI cross-platform
 │   │       └── phpFiles.ts         # Fichiers .php d'un dossier (vendor/, var/… ignorés)
@@ -462,6 +462,16 @@ rien pour un rôle hors hiérarchie). Les noms de route ont le diagnostic `route
 Hiérarchie : la dernière déclaration d'un rôle remplace les précédentes (`performNoDeepMerging()`), rôles atteignables par
 fermeture transitive comme `RoleHierarchy::buildRoleMap()`. Aucun diagnostic de rôle : un rôle peut venir de
 `User::getRoles()`.
+
+Rôles dans le code (`RoleReferenceFinder`, vérifié dans FrameworkBundle / SecurityBundle / TwigBridge 7.4) : littéral passé
+comme attribut à `->isGranted()` (1ᵉʳ positionnel, `attribute:` d'AbstractController et `AuthorizationCheckerInterface`,
+`attributes:` de `Security`), `->denyAccessUnlessGranted()` (1ᵉʳ, `attribute:`), `->isGrantedForUser()` (2ᵉ, `attribute:`),
+quel que soit l'objet ; `#[IsGranted]` si son nom se résout (via les `use`) en `Symfony\Component\Security\Http\Attribute\IsGranted`
+(1ᵉʳ, `attribute:`) ; Twig `is_granted()` (1ᵉʳ) et `is_granted_for_user()` (2ᵉ), positionnels seulement. Variable,
+concaténation, interpolation, `Expression`, closure, dépaquetage : aucune réponse. Complétion (rôles de la config
+`security` et attributs d'`AuthenticatedVoter`), définition (clé de `role_hierarchy`) et survol identiques au YAML ;
+pas de diagnostic (un attribut peut être celui d'un voter personnalisé). Les rôles écrits en dur dans `src/` (par
+exemple dans `getRoles()`) ne sont pas proposés.
 
 Diagnostic « provider inconnu » (Warning, code `security-provider-not-found`, `SecurityExtension` lève une exception) seulement
 si `SecurityConfig.isCertain()` : aucun `.php` dans `config/packages/` ni `config/packages/dev/`, pas de `services.php` à la

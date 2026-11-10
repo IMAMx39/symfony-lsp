@@ -23,7 +23,8 @@ import { MessageClassReferenceFinder } from './features/messenger/MessageClassRe
 import { provideRouteNameCompletion } from './features/routes/completion';
 import { provideEntityPropertyCompletion, provideRoleCompletion, provideSecurityProviderCompletion } from './features/security/completion';
 import { provideRoleHover } from './features/security/hover';
-import { provideSecurityDefinition } from './features/security/definition';
+import { provideRoleDefinition, provideSecurityDefinition } from './features/security/definition';
+import { RoleReferenceFinder } from './features/security/RoleReferenceFinder';
 import { provideSecurityDiagnostics } from './features/security/diagnostics';
 import { provideRouteDefinition } from './features/routes/definition';
 import { provideRouteDiagnostics } from './features/routes/diagnostics';
@@ -58,7 +59,7 @@ import { SymfonyProject } from './project/SymfonyProject';
 import { MAIN_NAMESPACE } from './project/TwigLoaderPaths';
 import type { EnvReference } from './services/envPlaceholders';
 import type { ParameterReference } from './services/parameterPlaceholders';
-import { findSecurityReferences, type SecurityReferences } from './security/securityYaml';
+import { findSecurityReferences, type RoleReference, type SecurityReferences } from './security/securityYaml';
 import { findYamlEnvReferences, findYamlParameterReferences, type YamlParameterScope } from './services/yamlParameterReferences';
 import { findClassReferences, findServiceReferences, type ServiceReference } from './services/yamlServices';
 import { isInsidePath, pathKey, uriToPath } from './util/paths';
@@ -94,6 +95,7 @@ interface ParsingContext {
   queryBuilderReferences: QueryBuilderReferenceFinder;
   messageClassReferences: MessageClassReferenceFinder;
   eventNameReferences: EventNameReferenceFinder;
+  roleReferences: RoleReferenceFinder;
 }
 
 interface AnalyzedDocument {
@@ -110,6 +112,8 @@ interface AnalyzedDocument {
   formFields: FormFieldReference[];
   /** DQL string literals of QueryBuilder calls (PHP only). */
   queryBuilder: QueryBuilderReference[];
+  /** Literal roles of isGranted() checks (`is_granted()`, `#[IsGranted]`…). */
+  roles: RoleReference[];
 }
 
 interface AnalyzedServicesYaml {
@@ -159,6 +163,7 @@ connection.onInitialize(async (params: InitializeParams): Promise<InitializeResu
       queryBuilderReferences: new QueryBuilderReferenceFinder(parsers),
       messageClassReferences: new MessageClassReferenceFinder(parsers),
       eventNameReferences: new EventNameReferenceFinder(parsers),
+      roleReferences: new RoleReferenceFinder(parsers),
     };
   } catch (error) {
     connection.console.error(`[Parsers] Failed to load tree-sitter grammars: ${formatError(error)}`);
@@ -252,7 +257,8 @@ connection.onDefinition((params) => {
       provideTranslationDefinition(document, params.position, analyzed.translations, context.translations) ??
       provideRepositoryDefinition(document, params.position, analyzed.repositories, context.doctrine, openText) ??
       provideServiceDefinition(document, params.position, analyzed.autowire.services, context.services) ??
-      provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services)
+      provideParameterDefinition(document, params.position, analyzed.autowire.parameters, context.services) ??
+      provideRoleDefinition(document, params.position, analyzed.roles, context.security)
     );
   } catch (error) {
     connection.console.error(`[Definition] ${formatError(error)}`);
@@ -304,7 +310,8 @@ connection.onHover((params) => {
     const { document, context } = analyzed;
     return (
       provideRouteHover(document, params.position, analyzed.routes, context.routes, context.project.root) ??
-      provideServiceHover(document, params.position, analyzed.autowire.services, context.services, context.project.root)
+      provideServiceHover(document, params.position, analyzed.autowire.services, context.services, context.project.root) ??
+      provideRoleHover(document, params.position, analyzed.roles, context.security, context.project.root)
     );
   } catch (error) {
     connection.console.error(`[Hover] ${formatError(error)}`);
@@ -340,6 +347,7 @@ connection.onCompletion((params) => {
       provideTemplateCompletion(document, params.position, analyzed.templates, context.templates.index.templates(), context.project.root) ??
       provideRouteNameCompletion(document, params.position, analyzed.routes, context.routes.visibleRoutes()) ??
       provideRouteParameterCompletion(document, params.position, analyzed.routes, context.routes) ??
+      provideRoleCompletion(document, params.position, analyzed.roles, context.security) ??
       provideTranslationCompletion(document, params.position, analyzed.translations, context.translations) ??
       provideFormFieldCompletion(document, params.position, analyzed.formFields, context.doctrine, openText) ??
       provideQueryBuilderCompletion(document, params.position, analyzed.queryBuilder, context.doctrine, openText) ??
@@ -479,6 +487,7 @@ function analyze(uri: string): AnalyzedDocument | null {
     repositories: language === 'php' ? parsing.repositoryReferences.find(tree.rootNode) : [],
     formFields: language === 'php' ? parsing.formFieldReferences.find(tree.rootNode) : [],
     queryBuilder: language === 'php' ? parsing.queryBuilderReferences.find(tree.rootNode) : [],
+    roles: parsing.roleReferences.find(language, tree.rootNode),
   };
 }
 
