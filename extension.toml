@@ -1,10 +1,11 @@
-id = "symfony-zed"
+id = "symfony-lsp"
 name = "Symfony"
-version = "0.0.1"
+version = "0.1.0"
 schema_version = 1
-authors = ["Imam"]
-description = "Symfony support (templates, routes, services, translations) without PHP on the host."
+authors = ["Imam MAASSOU"]
+description = "Symfony language server: templates, routes, services, translations, Doctrine, security. Works without PHP on the host."
+repository = "https://github.com/IMAMx39/symfony-lsp"
 
-[language_servers.symfony-zed]
+[language_servers.symfony-lsp]
 name = "Symfony"
 languages = ["PHP", "Twig", "YAML"]

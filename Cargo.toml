@@ -1,9 +1,10 @@
 [package]
-name = "symfony-zed"
-version = "0.0.1"
+name = "symfony-lsp"
+version = "0.1.0"
 edition = "2021"
 publish = false
 license = "MIT"
+repository = "https://github.com/IMAMx39/symfony-lsp"
 
 [lib]
 path = "src/lib.rs"

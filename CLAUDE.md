@@ -1,6 +1,6 @@
-# symfony-zed
+# symfony-lsp (dépôt local `symfony-zed`)
 
-Extension Zed apportant les fonctionnalités du **Symfony Plugin de PhpStorm** (Haehnchen) :
+Extension Zed (id `symfony-lsp`, nom affiché « Symfony », paquet npm du serveur `symfony-lsp`) apportant les fonctionnalités du **Symfony Plugin de PhpStorm** (Haehnchen) :
 navigation, complétion, hover et diagnostics Symfony dans PHP, Twig et YAML.
 
 Motivation : l'extension Symfony officielle de Zed ne supporte pas Windows, et elle démarre
@@ -563,9 +563,12 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Rôles dans le code : `is_granted()` (Twig), `#[IsGranted]`, `->isGranted()`, `->denyAccessUnlessGranted()`
 
 ### Phase 9 : publication
-- [ ] Paquet npm du serveur et installation via `zed::npm_install_package` dans `lib.rs`
-- [ ] Vérifier les règles du registre Zed (id d'extension sans `zed` ?) et choisir la licence
-- [ ] Publication dans `zed-industries/extensions`
+- [ ] Paquet npm du serveur et installation via `zed::npm_install_package` dans `lib.rs` — codé, paquet à publier
+- [x] Règles du registre Zed et licence : id `symfony-lsp` (sans `zed` ni `extension`, suffixe `-lsp` pour une
+      extension qui ne fournit qu'un serveur), licence MIT (`LICENSE` à la racine), textes visibles en anglais
+- [ ] Dépôt GitHub public `IMAMx39/symfony-lsp`
+- [ ] Publication dans `zed-industries/extensions` (sous-module HTTPS sur une branche, entrée `extensions.toml`
+      avec la version d'`extension.toml`, `pnpm sort-extensions`, une PR par extension)
 
 ---
 
@@ -574,14 +577,19 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - Déclarer le serveur pour les langages `PHP`, `Twig` et `YAML` dans `extension.toml`.
   Le langage Twig nécessite l'extension Twig communautaire de Zed : le documenter dans le README.
 - Résolution du serveur, dans l'ordre :
-  1. Mode dev : `lsp.symfony-zed.settings.server_path` (lu avec `LspSettings::for_worktree`),
+  1. Mode dev : `lsp.symfony-lsp.settings.server_path` (lu avec `LspSettings::for_worktree`),
      chemin absolu de `<repo>/server/dist/server.js`, lancé avec le Node de Zed.
-     **Ne pas utiliser `lsp.symfony-zed.binary.path`** : quand il est défini, Zed court-circuite
+     **Ne pas utiliser `lsp.symfony-lsp.binary.path`** : quand il est défini, Zed court-circuite
      l'extension et exécute ce chemin lui-même comme exécutable (constaté : `os error 193` sous
      Windows avec un `.js`). `binary` reste l'override complet de Zed (ex. `node.exe` + arguments).
-  2. Sinon, installer le paquet npm du serveur avec `zed::npm_install_package` et le lancer.
-     **Pas encore implémenté** (aucun paquet publié) : sans `server_path`, `lib.rs` renvoie une
-     erreur explicite demandant de le configurer.
+  2. Sinon, le paquet npm `symfony-lsp` : version installée comparée à la dernière version du registre
+     (une fois par session), `zed::npm_install_package` si elle diffère, statut d'installation affiché ;
+     registre injoignable ou installation ratée → la version déjà installée est gardée, sinon erreur.
+     Script lancé : `<dossier de l'extension>/node_modules/symfony-lsp/dist/server.js`.
+- Paquet npm (`server/package.json`) : bundle esbuild sans dépendance d'exécution (toutes en
+  `devDependencies`), `files` = `dist/server.js` + `dist/*.wasm`, `prepublishOnly` = lint + tests + build.
+  La version de `serverInfo` est celle du paquet, injectée au build (`__SERVER_VERSION__`).
+- Une nouvelle version = même numéro dans `extension.toml`, `Cargo.toml` et `server/package.json`.
 - Toujours lancer Node via `zed::node_binary_path()`, ne jamais supposer `node` dans le PATH.
 - Transmettre `--stdio` au serveur.
 
@@ -643,7 +651,7 @@ cargo check
 3. Dans les settings Zed :
    ```json
    "lsp": {
-     "symfony-zed": {
+     "symfony-lsp": {
        "settings": { "server_path": "C:\\chemin\\vers\\symfony-zed\\server\\dist\\server.js" }
      }
    },
@@ -652,7 +660,7 @@ cargo check
    }
    ```
    `semantic_tokens` est désactivé par défaut dans Zed : sans lui, le DQL n'est pas coloré. Zed fusionne les tokens de
-   tous les serveurs d'un fichier (Intelephense + symfony-zed) ; changer ce réglage demande de redémarrer le serveur.
+   tous les serveurs d'un fichier (Intelephense + symfony-lsp) ; changer ce réglage demande de redémarrer le serveur.
 4. Ouvrir un projet Symfony, puis `dev: open language server logs` pour voir les logs du serveur
 5. Après une modification du serveur : rebuild, puis redémarrer le serveur LSP depuis la palette
 

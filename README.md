@@ -1,146 +1,108 @@
-# symfony-zed
+# Symfony for Zed
 
-Extension [Zed](https://zed.dev) apportant le support de Symfony (templates, routes, services,
-traductions) dans PHP, Twig et YAML, **sans PHP sur l'hôte** et sans démarrer le kernel.
-Pensée d'abord pour Windows, fonctionne aussi sous macOS et Linux.
+[Symfony](https://symfony.com) support for the [Zed](https://zed.dev) editor, in PHP, Twig and YAML files:
+navigation, completion, hover and diagnostics for templates, routes, services, translations, Doctrine,
+Messenger, events and security.
 
-> Statut : phases 1 à 3 terminées.
->
-> - **Templates** : navigation, complétion et diagnostic des noms de templates en PHP
->   (`render()`, `renderView()`, `renderBlock()`, `#[Template]`) et en Twig (`extends`, `include`,
->   `embed`, `import`, `from`, `use`, `include()`, `source()`), namespaces `@Bundle/`, `@!Bundle/`, `twig.paths`.
-> - **Routes** : navigation, complétion, survol et diagnostic des noms de routes dans `path()`, `url()`,
->   `redirectToRoute()`, `generateUrl()`, et complétion de leurs paramètres. Les routes de bundles et le
->   diagnostic nécessitent le cache `var/cache/dev/` (généré par Symfony dans le conteneur).
-> - **Services** : navigation, complétion, survol (classe, tags, alias) et diagnostic des
->   `'@service_id'` dans `config/services.yaml` et de `#[Autowire(service: ...)]` / `#[Autowire('@...')]`,
->   navigation et complétion des paramètres dans `#[Autowire('%param%')]` / `#[Autowire(param: ...)]`.
->   Source : le container compilé `var/cache/dev/*Container.xml` et les déclarations du YAML ; le
->   diagnostic exige un container plus récent que la configuration.
+It reads your project files and the compiled cache in `var/cache/dev` only. **PHP is not needed on the host**
+and the kernel is never booted, so projects running in Docker work out of the box. Windows, macOS and Linux
+are supported.
 
-## Prérequis
+## Installation
 
-- Zed (Windows, macOS ou Linux)
-- Rust via [rustup](https://rustup.rs) (Zed compile l'extension en WASM lors de l'installation en dev)
-- Node.js 20+ pour construire le serveur (à l'exécution, Zed fournit son propre Node)
-- Pour Twig : l'extension communautaire **Twig** de Zed (le langage `Twig` n'est pas intégré à Zed)
-- Pour PHP : l'extension **PHP** de Zed
+1. In Zed, open the extensions page (`zed: extensions`), search for **Symfony** and install it.
+   The language server (the [`symfony-lsp`](https://www.npmjs.com/package/symfony-lsp) npm package) is
+   downloaded and kept up to date automatically, and runs on the Node.js shipped with Zed.
+2. For Twig files, also install the **Twig** extension (Zed has no built-in Twig language). The **PHP**
+   extension provides the PHP language.
+3. Open a Symfony project. It is detected when a folder contains `composer.json` and `bin/console`
+   (or `config/bundles.php`): the opened folder first, then its direct subfolders (`app/` next to `docker/`).
 
-## Installation en développement
+Generate the dev cache in your container (`bin/console cache:warmup`, or any page load in `dev`) to get
+bundle routes and services, and the "not found" diagnostics.
 
-1. Construire le serveur :
-   ```bash
-   cd server
-   npm install
-   npm run build
-   ```
-2. Dans Zed : palette → `zed: install dev extension` → sélectionner la racine de ce dépôt.
-3. Dans les settings Zed (`settings.json`), indiquer le chemin du serveur :
-   ```json
-   {
-     "lsp": {
-       "symfony-zed": {
-         "settings": {
-           "server_path": "C:\\chemin\\vers\\symfony-zed\\server\\dist\\server.js"
-         }
-       }
-     }
-   }
-   ```
-   Sans ce réglage, le serveur ne démarre pas (pas encore de paquet npm publié). Ne pas utiliser
-   `binary.path` pour ce fichier : Zed lancerait alors le `.js` lui-même comme un exécutable.
-4. Ouvrir un projet Symfony, puis palette → `dev: open language server logs` et choisir
-   `symfony-zed`. On doit voir :
-   ```
-   [Server] symfony-zed 0.0.1 initialized (...)
-   [SymfonyProject] Symfony project detected at ...
-   ```
+## Features
 
-Après une modification du serveur : `npm run build`, puis palette → `editor: restart language server`.
+| Area | In | What you get |
+|---|---|---|
+| Templates | `render()`, `renderView()`, `renderBlock()`, `#[Template]`; Twig `extends`, `include`, `embed`, `import`, `from`, `use`, `include()`, `source()` | Go to definition, completion, missing template warning. `@Bundle/`, `@!Bundle/`, `twig.paths` and bundle overrides |
+| Routes | `path()`, `url()`, `redirectToRoute()`, `generateUrl()`, `security.yaml` | Go to definition, completion of names and parameters, hover (path, methods, controller), unknown route warning |
+| Services | `'@id'` in `config/services.yaml`, `#[Autowire]`, `security.yaml` | Go to definition, completion, hover (class, tags, aliases), unknown service warning |
+| Parameters | `%param%` and `%env(...)%` in YAML and `#[Autowire]` | Go to definition, completion of parameters, `.env` variables and env processors |
+| Translations | `->trans()`, `\|trans`, `{% trans %}` | Go to definition, completion, missing key warning (default locale) |
+| Doctrine | `getRepository()`, form types, QueryBuilder, `findBy()` / `findOneBy()` / `count()`, `mappedBy` / `inversedBy` / `indexBy` | Go to repository or property, completion of entity fields, DQL highlighting |
+| Messenger, events | Message and event classes, event names | Go to implementation lists the handlers and listeners |
+| Security | `security.yaml`, `is_granted()`, `#[IsGranted]`, `->isGranted()`, `->denyAccessUnlessGranted()` | Providers, firewall services and routes, roles and role hierarchy |
 
-## Cohabitation avec les autres serveurs
+When the answer is uncertain (dynamic strings, PHP configuration files, missing cache), the extension stays
+silent rather than guessing.
 
-`symfony-zed` complète les serveurs de langage existants (Intelephense ou Phpactor pour PHP,
-yaml-language-server pour YAML), il ne les remplace pas. Il ne répond qu'aux positions Symfony
-(nom de template, de route ou de service dans une chaîne littérale) et renvoie un résultat vide
-partout ailleurs. Il n'expose ni formatage, ni renommage, ni code actions.
+## Settings
 
-Zed interroge **tous** les serveurs d'un fichier pour « aller à la définition » et fusionne leurs
-réponses : l'ordre de `language_servers` n'a pas d'importance. Si un autre serveur répond aussi,
-Zed affiche la liste des résultats au lieu de sauter directement au template.
+### DQL highlighting
 
-C'est le cas de **php-lsp** : il renvoie la définition de la fonction appelée (`render()`) même
-quand le curseur est dans la chaîne. Intelephense, lui, ne répond rien sur une chaîne. Avec
-Intelephense pour la navigation PHP, désactiver php-lsp (`!`) :
+Zed only asks language servers for semantic highlighting when it is enabled:
 
 ```json
 {
   "languages": {
-    "PHP": { "language_servers": ["symfony-zed", "intelephense", "!php-lsp", "..."] }
+    "PHP": { "semantic_tokens": "combined" }
   }
 }
 ```
 
-`"..."` désigne les autres serveurs activés par défaut.
+Restart the language server afterwards (`editor: restart language server`).
 
-Les handlers Messenger d'un message s'ouvrent avec **« aller à l'implémentation »**
-(`editor: go to implementation`) sur le nom de sa classe : déclaration, `new Message()`,
-`Message::class` ou type d'un paramètre. `symfony-zed` ne répond que si la classe a des handlers.
-Sur une interface ou une classe parente, Intelephense peut aussi répondre (ses implémentations).
+### Other PHP language servers
 
-Les listeners et subscribers d'un événement s'ouvrent de la même façon, sur la classe de
-l'événement (`RequestEvent`, `new OrderPlacedEvent()`…), sur une constante (`KernelEvents::REQUEST`)
-ou sur un nom littéral (`->dispatch($event, 'order.placed')`, `#[AsEventListener(event: '...')]`, clés
-de `getSubscribedEvents()`), triés par priorité. Ceux des bundles et du vendor viennent du container
-dumpé dans `var/cache/dev` : sans lui, seuls ceux de `src/` sont listés.
+This server complements Intelephense or Phpactor, it does not replace them: it only answers at Symfony
+positions. Zed merges the go-to-definition results of every server, so another server that also answers
+inside strings makes Zed show a list instead of jumping. This is the case of `php-lsp`; with Intelephense,
+disable it:
 
-Après `zed: install dev extension`, Zed arrête `symfony-zed` sans toujours le relancer : faire
-`editor: restart language server` (fichier PHP ouvert), ou redémarrer Zed si cela ne suffit pas.
+```json
+{
+  "languages": {
+    "PHP": { "language_servers": ["symfony-lsp", "intelephense", "!php-lsp", "..."] }
+  }
+}
+```
 
-## Détection du projet
+Messenger handlers and event listeners are listed with **go to implementation**
+(`editor: go to implementation`) on a message or event class, an event constant or an event name.
 
-Un dossier est une racine Symfony s'il contient `composer.json` et `bin/console`
-(ou `config/bundles.php`). Le dossier ouvert dans Zed est testé en premier, puis ses
-sous-dossiers directs (cas `docker/` + `app/`). Si plusieurs sous-dossiers sont des projets
-Symfony, aucun n'est retenu.
+## Development
 
-## Développement
+Requirements: Rust through [rustup](https://rustup.rs) and Node.js 20+.
 
 ```bash
 cd server
-npm run lint     # tsc --noEmit
+npm install
+npm run build    # dist/server.js
 npm test         # vitest
-npm run watch    # rebuild automatique
-cargo check      # depuis la racine, vérifie l'extension Rust
+npm run lint     # tsc --noEmit
 ```
 
-## Roadmap
+In Zed, run `zed: install dev extension` and select this repository, then point the extension at your local
+build (it then skips the npm package):
 
-| Phase | Contenu | Statut |
-|---|---|---|
-| 0 | Squelette : extension Zed, serveur LSP, détection du projet | Fait (installation sous Windows à valider) |
-| 1 | Templates : navigation, complétion, diagnostic | Fait |
-| 2 | Routes : navigation, complétion, survol, paramètres, diagnostic | Fait |
-| 3 | Services : IDs dans le YAML, `#[Autowire]`, survol, diagnostic | Fait |
-| 4 | Traductions : `trans()`, `\|trans`, `{% trans %}`, clés manquantes | En cours |
-| 5 | Doctrine et Forms : repositories, champs d'entité | Prévu |
-| 6 | Paramètres `%param%` et variables d'environnement `%env()%` | Prévu |
-| 7 | Messenger et Event Dispatcher : handlers, listeners, subscribers | En cours |
-| 8 | Sécurité : `security.yaml` | Prévu |
-| 9 | Publication : paquet npm, registre des extensions Zed | Prévu |
+```json
+{
+  "lsp": {
+    "symfony-lsp": {
+      "settings": { "server_path": "/absolute/path/to/server/dist/server.js" }
+    }
+  }
+}
+```
 
-Le détail de chaque phase est dans [CLAUDE.md](CLAUDE.md).
+After a server change: `npm run build`, then `editor: restart language server`. Logs are in
+`dev: open language server logs` → `symfony-lsp`.
 
-## Références
+## Credits
 
-- [Zed : extensions](https://zed.dev/docs/extensions)
-- [Zed : langages](https://zed.dev/docs/languages)
-- [Registre des extensions Zed](https://github.com/zed-industries/extensions)
-- [Spécification du Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
-- [Documentation Symfony](https://symfony.com/doc/current/index.html)
-- [Documentation Composer](https://getcomposer.org/doc/)
-- [Symfony Plugin pour PhpStorm](https://github.com/Haehnchen/idea-php-symfony2-plugin) (inspiration)
+Inspired by the [Symfony Plugin for PhpStorm](https://github.com/Haehnchen/idea-php-symfony2-plugin).
 
-## Licence
+## License
 
-À choisir avant la première publication.
+[MIT](LICENSE)

@@ -69,8 +69,9 @@ import { findYamlEnvReferences, findYamlParameterReferences, type YamlParameterS
 import { findClassReferences, findServiceReferences, type ServiceReference } from './services/yamlServices';
 import { isInsidePath, pathKey, uriToPath } from './util/paths';
 
-const SERVER_NAME = 'symfony-zed';
-const SERVER_VERSION = '0.0.1';
+const SERVER_NAME = 'symfony-lsp';
+/** Version of the npm package, injected by scripts/build.mjs. */
+const SERVER_VERSION = __SERVER_VERSION__;
 const DIAGNOSTICS_DELAY_MS = 250;
 const RELOAD_DELAY_MS = 300;
 

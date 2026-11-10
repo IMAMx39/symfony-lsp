@@ -43,6 +43,9 @@ const webTreeSitterCjsPlugin = {
   },
 };
 
+/** Version of the npm package, reported by the server (`serverInfo`). */
+const { version } = JSON.parse(fs.readFileSync(path.join(serverDir, 'package.json'), 'utf8'));
+
 const options = {
   entryPoints: [path.join(serverDir, 'src', 'server.ts')],
   outfile: path.join(distDir, 'server.js'),
@@ -53,6 +56,7 @@ const options = {
   sourcemap: true,
   logLevel: 'info',
   plugins: [rawPlugin, webTreeSitterCjsPlugin],
+  define: { __SERVER_VERSION__: JSON.stringify(version) },
 };
 
 fs.mkdirSync(distDir, { recursive: true });

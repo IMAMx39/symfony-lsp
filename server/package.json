@@ -1,9 +1,29 @@
 {
-  "name": "symfony-zed-server",
-  "version": "0.0.1",
-  "private": true,
-  "description": "Symfony language server for Zed",
+  "name": "symfony-lsp",
+  "version": "0.1.0",
+  "description": "Symfony language server (templates, routes, services, translations, Doctrine, security) for Zed, without PHP on the host",
   "license": "MIT",
+  "author": "Imam MAASSOU",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/IMAMx39/symfony-lsp.git",
+    "directory": "server"
+  },
+  "homepage": "https://github.com/IMAMx39/symfony-lsp#readme",
+  "bugs": "https://github.com/IMAMx39/symfony-lsp/issues",
+  "keywords": [
+    "symfony",
+    "language-server",
+    "lsp",
+    "zed",
+    "twig",
+    "doctrine"
+  ],
+  "main": "dist/server.js",
+  "files": [
+    "dist/server.js",
+    "dist/*.wasm"
+  ],
   "engines": {
     "node": ">=20"
   },
@@ -11,22 +31,21 @@
     "build": "node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
     "test": "vitest run",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run lint && npm test && npm run build"
   },
-  "dependencies": {
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "esbuild": "^0.28.2",
     "fast-xml-parser": "^5.12.0",
+    "tree-sitter-php": "0.24.2",
+    "tree-sitter-twig": "0.8.2",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.0",
     "vscode-languageserver": "^11.0.0",
     "vscode-languageserver-textdocument": "^1.0.16",
     "vscode-uri": "^3.2.0",
     "web-tree-sitter": "0.25.10",
     "yaml": "^2.9.1"
-  },
-  "devDependencies": {
-    "@types/node": "^26.6.6",
-    "esbuild": "^0.28.2",
-    "tree-sitter-php": "0.24.2",
-    "tree-sitter-twig": "0.8.2",
-    "typescript": "^7.0.2",
-    "vitest": "^5.1.0"
   }
 }
