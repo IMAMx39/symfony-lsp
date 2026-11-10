@@ -543,10 +543,10 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 ### Phase 5 : Doctrine et Forms
 - [x] `getRepository(Entity::class)` → repository
 - [x] Completion des champs d'entité dans les form types et le QueryBuilder (alias simples)
-- [ ] Définition dans le QueryBuilder : `alias.champ` → propriété, alias → entité — codé, à vérifier dans Zed
-- [ ] `mappedBy` / `inversedBy` / `indexBy` des associations : définition et complétion — codé, à vérifier dans Zed
-- [ ] Coloration du DQL (semantic tokens, `"semantic_tokens": "combined"` dans Zed) — alias vérifiés dans Zed, reste à vérifier
-- [ ] Clés de `findBy()` / `findOneBy()` / `count()` : définition et complétion — codé, à vérifier dans Zed
+- [x] Définition dans le QueryBuilder : `alias.champ` → propriété, alias → entité
+- [x] `mappedBy` / `inversedBy` / `indexBy` des associations : définition et complétion
+- [x] Coloration du DQL (semantic tokens, `"semantic_tokens": "combined"` dans Zed)
+- [x] Clés de `findBy()` / `findOneBy()` / `count()` : définition et complétion
 
 ### Phase 6 : paramètres et variables d'environnement
 - [x] Definition + completion des `%param%` dans le YAML (container compilé + `parameters:`)
@@ -554,11 +554,11 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 
 ### Phase 7 : Messenger et Event Dispatcher
 - [x] Message → handlers (`#[AsMessageHandler]`, tag `messenger.message_handler`)
-- [x] Événement → listeners et subscribers (`#[AsEventListener]`, `getSubscribedEvents()`) — codé, à vérifier dans Zed
+- [x] Événement → listeners et subscribers (`#[AsEventListener]`, `getSubscribedEvents()`)
 
 ### Phase 8 : sécurité
-- [x] `security.yaml` : providers (définition, complétion, diagnostic), entité du provider, services des firewalls — codé, à vérifier dans Zed
-- [x] `security.yaml` : routes des firewalls (`login_path`, `check_path`…) et `access_control[].route` — codé, à vérifier dans Zed
+- [x] `security.yaml` : providers (définition, complétion, diagnostic), entité du provider, services des firewalls
+- [x] `security.yaml` : routes des firewalls (`login_path`, `check_path`…) et `access_control[].route`
 - [x] `security.yaml` : rôles (`role_hierarchy`, `access_control[].roles`, `switch_user.role`)
 - [x] Rôles dans le code : `is_granted()` (Twig), `#[IsGranted]`, `->isGranted()`, `->denyAccessUnlessGranted()`
 
