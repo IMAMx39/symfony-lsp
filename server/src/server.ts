@@ -21,7 +21,8 @@ import { provideEventListenerImplementation } from './features/events/implementa
 import { provideMessageHandlerImplementation } from './features/messenger/implementation';
 import { MessageClassReferenceFinder } from './features/messenger/MessageClassReferenceFinder';
 import { provideRouteNameCompletion } from './features/routes/completion';
-import { provideEntityPropertyCompletion, provideSecurityProviderCompletion } from './features/security/completion';
+import { provideEntityPropertyCompletion, provideRoleCompletion, provideSecurityProviderCompletion } from './features/security/completion';
+import { provideRoleHover } from './features/security/hover';
 import { provideSecurityDefinition } from './features/security/definition';
 import { provideSecurityDiagnostics } from './features/security/diagnostics';
 import { provideRouteDefinition } from './features/routes/definition';
@@ -286,6 +287,7 @@ connection.onHover((params) => {
     const securityHover =
       securityYaml &&
       (provideRouteHover(securityYaml.document, params.position, securityYaml.references.routes, securityYaml.context.routes, securityYaml.context.project.root) ??
+        provideRoleHover(securityYaml.document, params.position, securityYaml.references.roles, securityYaml.context.security, securityYaml.context.project.root) ??
         provideServiceHover(securityYaml.document, params.position, securityYaml.references.services, securityYaml.context.services, securityYaml.context.project.root));
     if (securityHover) {
       return securityHover;
@@ -323,6 +325,7 @@ connection.onCompletion((params) => {
         (security && provideEntityPropertyCompletion(document, params.position, security, context.doctrine, openText)) ??
         (security && provideServiceCompletion(document, params.position, security.services, context.services.visibleServices())) ??
         (security && provideRouteNameCompletion(document, params.position, security.routes, context.routes.visibleRoutes())) ??
+        (security && provideRoleCompletion(document, params.position, security.roles, context.security)) ??
         (servicesYaml && provideServiceCompletion(document, params.position, servicesYaml.references, context.services.visibleServices())) ??
         provideEnvCompletion(document, params.position, env, context.env.all(), context.services.visibleParameters()) ??
         provideParameterCompletion(document, params.position, parameters, context.services.visibleParameters())

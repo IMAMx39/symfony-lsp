@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { findSecurityReferences, parseSecurityProviders, providerKey } from '../../src/security/securityYaml';
+import { findSecurityReferences, parseSecurityDeclarations, providerKey } from '../../src/security/securityYaml';
 
 const names = (source: string, references: ReadonlyArray<{ nameStart: number; nameEnd: number }>): string[] =>
   references.map((reference) => source.slice(reference.nameStart, reference.nameEnd));
 
-describe('parseSecurityProviders', () => {
+describe('parseSecurityDeclarations', () => {
   it('reads providers of the root block and of when@dev, with their type', () => {
     const source = [
       'security:',
@@ -23,7 +23,7 @@ describe('parseSecurityProviders', () => {
       '            prod_users: { memory: ~ }',
       '',
     ].join('\n');
-    const providers = parseSecurityProviders(source, '/app/config/packages/security.yaml', 'dev')!;
+    const { providers } = parseSecurityDeclarations(source, '/app/config/packages/security.yaml', 'dev')!;
     expect(providers.map((provider) => [provider.name, provider.type, provider.entityClass, provider.serviceId])).toEqual([
       ['users', 'entity', 'App\\Entity\\User', null],
       ['in_memory', 'memory', null, null],
@@ -34,8 +34,8 @@ describe('parseSecurityProviders', () => {
   });
 
   it('returns null for invalid YAML and nothing without a security block', () => {
-    expect(parseSecurityProviders('security: [\n', '/app/x.yaml', 'dev')).toBeNull();
-    expect(parseSecurityProviders('framework:\n    providers: { a: { memory: ~ } }\n', '/app/x.yaml', 'dev')).toEqual([]);
+    expect(parseSecurityDeclarations('security: [\n', '/app/x.yaml', 'dev')).toBeNull();
+    expect(parseSecurityDeclarations('framework:\n    providers: { a: { memory: ~ } }\n', '/app/x.yaml', 'dev')).toEqual({ providers: [], roleHierarchy: [], roles: [] });
   });
 });
 
@@ -118,6 +118,75 @@ describe('findSecurityReferences', () => {
     const references = findSecurityReferences(source, 'dev');
     expect(references.providers).toEqual([]);
     expect(references.services).toEqual([]);
+  });
+});
+
+describe('roles', () => {
+  const source = [
+    'security:',
+    '    role_hierarchy:',
+    '        ROLE_ADMIN: ROLE_USER',
+    "        ROLE_SUPER_ADMIN: 'ROLE_ADMIN, ROLE_ALLOWED_TO_SWITCH'",
+    '        ROLE_EDITOR: [ROLE_USER, ROLE_WRITER]',
+    '    providers:',
+    '        mem:',
+    '            memory:',
+    '                users:',
+    '                    admin: { password: x, roles: [ROLE_OWNER] }',
+    '                    bob: { password: x, roles: "ROLE_A,ROLE_B" }',
+    '    firewalls:',
+    '        main:',
+    '            switch_user: { role: CAN_SWITCH }',
+    '    access_control:',
+    '        - { path: ^/admin, roles: ROLE_ADMIN }',
+    '        - { path: ^/, roles: [PUBLIC_ACCESS, IS_AUTHENTICATED] }',
+    '',
+  ].join('\n');
+
+  it('declares the hierarchy, strings split on commas', () => {
+    const { roleHierarchy, roles } = parseSecurityDeclarations(source, '/app/config/packages/security.yaml', 'dev')!;
+    expect(roleHierarchy.map((entry) => [entry.role, entry.includes])).toEqual([
+      ['ROLE_ADMIN', ['ROLE_USER']],
+      ['ROLE_SUPER_ADMIN', ['ROLE_ADMIN', 'ROLE_ALLOWED_TO_SWITCH']],
+      ['ROLE_EDITOR', ['ROLE_USER', 'ROLE_WRITER']],
+    ]);
+    expect([...roles].sort()).toEqual(
+      [
+        'CAN_SWITCH',
+        'IS_AUTHENTICATED',
+        'PUBLIC_ACCESS',
+        'ROLE_A',
+        'ROLE_ADMIN',
+        'ROLE_ALLOWED_TO_SWITCH',
+        'ROLE_B',
+        'ROLE_EDITOR',
+        'ROLE_OWNER',
+        'ROLE_SUPER_ADMIN',
+        'ROLE_USER',
+        'ROLE_WRITER',
+      ].sort(),
+    );
+  });
+
+  it('finds role references with their kind', () => {
+    const references = findSecurityReferences(source, 'dev').roles;
+    expect(references.map((reference) => [source.slice(reference.nameStart, reference.nameEnd), reference.declaration, reference.attributes])).toEqual([
+      ['ROLE_ADMIN', true, false],
+      ['ROLE_USER', false, false],
+      ['ROLE_SUPER_ADMIN', true, false],
+      ['ROLE_ADMIN', false, false],
+      ['ROLE_ALLOWED_TO_SWITCH', false, false],
+      ['ROLE_EDITOR', true, false],
+      ['ROLE_USER', false, false],
+      ['ROLE_WRITER', false, false],
+      ['ROLE_OWNER', false, false],
+      ['ROLE_A', false, false],
+      ['ROLE_B', false, false],
+      ['CAN_SWITCH', false, true],
+      ['ROLE_ADMIN', false, true],
+      ['PUBLIC_ACCESS', false, true],
+      ['IS_AUTHENTICATED', false, true],
+    ]);
   });
 });
 

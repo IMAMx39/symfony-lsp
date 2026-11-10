@@ -449,10 +449,19 @@ ou entre guillemets sans échappement, sur une ligne) ; une valeur vide compte p
   et `switch_user.target_route` (passés à `UrlGenerator::generate()`). Route ou chemin, lus par `HttpUtils` : `login_path`,
   `check_path`, `default_target_path`, `failure_path` d'un bloc d'authenticator, `logout.path`, `logout.target`,
   `access_denied_url` ; c'est un nom de route sauf si la valeur commence par `/` (`//hôte` compris) ou est une URL absolue
-  (schéma + hôte, comme `parse_url()` dans `generateUri()`). Valeur contenant `%` : aucune réponse.
-Définition : route (comme en PHP/Twig), déclaration du provider, champ de l'entité, service (comme dans `services.yaml`)
-puis classe. Complétion : providers (une fois par nom, type en détail), champs, ids de service, noms de route.
-Survol : celui des routes et des services. Les noms de route ont le diagnostic `route-not-found` (`RouteIndex.isCertain()`).
+  (schéma + hôte, comme `parse_url()` dans `generateUri()`). Valeur contenant `%` : aucune réponse ;
+- **rôles** : clés de `role_hierarchy` (déclarations) et leurs valeurs, `access_control[].roles`, `roles` des utilisateurs
+  `memory`, `switch_user.role` (un seul attribut, non découpé). Séquence, ou chaîne découpée sur `,` comme la config.
+  `access_control` et `switch_user` passent par `isGranted()` : les attributs d'`AuthenticatedVoter` (`PUBLIC_ACCESS`,
+  `IS_AUTHENTICATED[_FULLY|_REMEMBERED]`, `IS_REMEMBERED`, `IS_IMPERSONATOR`) y sont aussi proposés.
+Définition : route (comme en PHP/Twig), déclaration du provider, champ de l'entité, rôle (clé de `role_hierarchy`),
+service (comme dans `services.yaml`) puis classe. Complétion : providers (une fois par nom, type en détail), champs, ids
+de service, noms de route, rôles (tous ceux de la config, rôles atteignables en détail ; rien sur une clé de hiérarchie).
+Survol : routes, services, rôles (rôles inclus et rôles qui l'incluent, déclaration ; description d'un attribut du voter ;
+rien pour un rôle hors hiérarchie). Les noms de route ont le diagnostic `route-not-found` (`RouteIndex.isCertain()`).
+Hiérarchie : la dernière déclaration d'un rôle remplace les précédentes (`performNoDeepMerging()`), rôles atteignables par
+fermeture transitive comme `RoleHierarchy::buildRoleMap()`. Aucun diagnostic de rôle : un rôle peut venir de
+`User::getRoles()`.
 
 Diagnostic « provider inconnu » (Warning, code `security-provider-not-found`, `SecurityExtension` lève une exception) seulement
 si `SecurityConfig.isCertain()` : aucun `.php` dans `config/packages/` ni `config/packages/dev/`, pas de `services.php` à la
@@ -505,14 +514,14 @@ Cocher au fur et à mesure. **Ne travailler que sur la phase en cours.**
 - [x] Completion des `%env(...)%` (fichiers `.env*`, processeurs `int:`, `bool:`, `json:`…)
 
 ### Phase 7 : Messenger et Event Dispatcher
-- [ ] Message → handlers (`#[AsMessageHandler]`, tag `messenger.message_handler`)
-- [ ] Événement → listeners et subscribers (`#[AsEventListener]`, `getSubscribedEvents()`) — codé, à vérifier dans Zed
+- [x] Message → handlers (`#[AsMessageHandler]`, tag `messenger.message_handler`)
+- [x] Événement → listeners et subscribers (`#[AsEventListener]`, `getSubscribedEvents()`) — codé, à vérifier dans Zed
 
 ### Phase 8 : sécurité
-- [ ] `security.yaml` : providers (définition, complétion, diagnostic), entité du provider, services des firewalls — codé, à vérifier dans Zed
-- [ ] `security.yaml` : routes des firewalls (`login_path`, `check_path`…) et `access_control[].route` — codé, à vérifier dans Zed
-- [ ] `security.yaml` : rôles (`role_hierarchy`, `access_control[].roles`, `switch_user.role`)
-- [ ] Rôles dans le code : `is_granted()` (Twig), `#[IsGranted]`, `->isGranted()`, `->denyAccessUnlessGranted()`
+- [x] `security.yaml` : providers (définition, complétion, diagnostic), entité du provider, services des firewalls — codé, à vérifier dans Zed
+- [x] `security.yaml` : routes des firewalls (`login_path`, `check_path`…) et `access_control[].route` — codé, à vérifier dans Zed
+- [x] `security.yaml` : rôles (`role_hierarchy`, `access_control[].roles`, `switch_user.role`)
+- [x] Rôles dans le code : `is_granted()` (Twig), `#[IsGranted]`, `->isGranted()`, `->denyAccessUnlessGranted()`
 
 ### Phase 9 : publication
 - [ ] Paquet npm du serveur et installation via `zed::npm_install_package` dans `lib.rs`

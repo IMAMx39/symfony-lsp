@@ -5,7 +5,7 @@ import type { ClassReference, ServiceReference } from '../services/yamlServices'
 import { pathToUri } from '../util/paths';
 
 /** Same shape as the class names ResolveClassPass accepts as a service id (namespaced only). */
-const NAMESPACED_CLASS = /^[A-Za-z_\x7f-￿][\w\x7f-￿]*(?:\\[A-Za-z_\x7f-￿][\w\x7f-￿]*)+$/;
+const NAMESPACED_CLASS = /^[A-Za-z_\x7f-\uffff][\w\x7f-\uffff]*(?:\\[A-Za-z_\x7f-\uffff][\w\x7f-\uffff]*)+$/;
 
 /** Firewall options holding a service id (SecurityExtension: `new Reference()` / alias / ChildDefinition). */
 const FIREWALL_SERVICE_KEYS = ['user_checker', 'access_denied_handler'];
@@ -39,6 +39,29 @@ export interface NameReference {
   nameEnd: number;
 }
 
+/** A role of `role_hierarchy` and the roles it includes directly. */
+export interface RoleDeclaration {
+  role: string;
+  includes: string[];
+  location: Location;
+}
+
+/** What a YAML file declares in its `security:` blocks. */
+export interface SecurityDeclarations {
+  providers: ProviderDeclaration[];
+  /** `role_hierarchy` entries, in document order. */
+  roleHierarchy: RoleDeclaration[];
+  /** Every role name the file uses: hierarchy keys and values, access_control, memory users, switch_user. */
+  roles: string[];
+}
+
+/** A role name. Hierarchy keys are declarations; security attributes are accepted where `attributes` is true. */
+export interface RoleReference extends NameReference {
+  declaration: boolean;
+  /** The value is checked through isGranted() (access_control, switch_user): AuthenticatedVoter attributes are valid. */
+  attributes: boolean;
+}
+
 /** `property:` of an entity provider: a mapped field of `entityClass`. */
 export interface EntityPropertyReference extends NameReference {
   entityClass: string;
@@ -60,45 +83,67 @@ export interface SecurityReferences {
    * `logout.path`, `logout.target`, `access_denied_url`. Values with a `%parameter%` are skipped.
    */
   routes: NameReference[];
+  /** Role names: `role_hierarchy` keys and values, `access_control[].roles`, `switch_user.role`, roles of memory users. */
+  roles: RoleReference[];
 }
 
+/** Attributes of AuthenticatedVoter, valid wherever roles are checked through isGranted(). */
+export const SECURITY_ATTRIBUTES: ReadonlyArray<{ name: string; description: string }> = [
+  { name: 'PUBLIC_ACCESS', description: 'Everyone, authenticated or not' },
+  { name: 'IS_AUTHENTICATED', description: 'Any authenticated user' },
+  { name: 'IS_AUTHENTICATED_FULLY', description: 'Authenticated during this session (not remembered)' },
+  { name: 'IS_AUTHENTICATED_REMEMBERED', description: 'Authenticated, possibly through a remember-me cookie' },
+  { name: 'IS_REMEMBERED', description: 'Authenticated through a remember-me cookie' },
+  { name: 'IS_IMPERSONATOR', description: 'Impersonating another user (switch_user)' },
+];
+
 /**
- * User providers declared in the `security:` blocks of a YAML configuration file (the root one
- * and the one of `when@<env>`). Returns null when the file is not valid YAML.
+ * Providers, role hierarchy and roles declared in the `security:` blocks of a YAML configuration
+ * file (the root one and the one of `when@<env>`). Returns null when the file is not valid YAML.
  */
-export function parseSecurityProviders(source: string, file: string, env: string): ProviderDeclaration[] | null {
+export function parseSecurityDeclarations(source: string, file: string, env: string): SecurityDeclarations | null {
   const document = parseDocument(source);
   if (document.errors.length > 0) {
     return null;
   }
   const text = TextDocument.create(pathToUri(file), 'yaml', 0, source);
-  const declarations: ProviderDeclaration[] = [];
+  const keyLocation = (pair: Pair): Location | null => {
+    const range = (pair.key as { range?: [number, number, number] } | null)?.range;
+    return range ? Location.create(text.uri, Range.create(text.positionAt(range[0]), text.positionAt(range[1]))) : null;
+  };
+  const declarations: SecurityDeclarations = { providers: [], roleHierarchy: [], roles: [] };
   for (const security of securityBlocks(document, env)) {
+    for (const pair of mapEntries(security.get('role_hierarchy', true))) {
+      const role = scalarString(pair.key);
+      const location = keyLocation(pair);
+      if (role !== null && location !== null) {
+        declarations.roleHierarchy.push({ role, includes: listValues(pair.value), location });
+      }
+    }
     for (const pair of mapEntries(security.get('providers', true))) {
       const name = scalarString(pair.key);
-      const range = (pair.key as { range?: [number, number, number] } | null)?.range;
-      if (name === null || !range) {
+      const location = keyLocation(pair);
+      if (name === null || location === null) {
         continue;
       }
       const definition = isMap(pair.value) ? pair.value : null;
       const type = definition?.items.map((item) => scalarString(item.key)).find((key) => key !== null) ?? null;
       const entity = definition?.get('entity', true);
       const entityClass = isMap(entity) ? scalarString(entity.get('class', true)) : null;
-      declarations.push({
+      declarations.providers.push({
         name,
         type,
         entityClass: entityClass === null ? null : entityClass.replace(/^\\/, ''),
         serviceId: definition ? scalarString(definition.get('id', true)) : null,
-        location: Location.create(text.uri, Range.create(text.positionAt(range[0]), text.positionAt(range[1]))),
+        location,
       });
     }
   }
+  const roles = new Set(findSecurityReferences(source, env).roles.map((reference) => reference.name));
+  declarations.roleHierarchy.forEach((entry) => entry.includes.forEach((role) => roles.add(role)));
+  roles.delete('');
+  declarations.roles = [...roles];
   return declarations;
-}
-
-/** True when the file declares something under `security:` (root or `when@<env>`). */
-export function hasSecurityConfig(source: string, env: string): boolean {
-  return securityBlocks(parseDocument(source), env).length > 0;
 }
 
 /** True when the file has `imports:` (root or `when@<env>`): imported files are not read. */
@@ -117,7 +162,16 @@ export function hasImports(source: string, env: string): boolean {
  * escapes, on one line), plus empty values for completion. Works on files being edited.
  */
 export function findSecurityReferences(source: string, env: string): SecurityReferences {
-  const references: SecurityReferences = { providers: [], services: [], classes: [], entityProperties: [], routes: [] };
+  const references: SecurityReferences = { providers: [], services: [], classes: [], entityProperties: [], routes: [], roles: [] };
+  // A sequence of roles, or a string split on commas (preg_split() in the configuration tree).
+  const addRoles = (node: unknown, attributes: boolean): void => {
+    const texts = isSeq(node) ? node.items.map((item) => textOf(item, source)) : [textOf(node, source)].flatMap((text) => (text === null ? [] : splitList(text)));
+    for (const text of texts) {
+      if (text !== null) {
+        references.roles.push({ ...text, declaration: false, attributes });
+      }
+    }
+  };
   const addRoute = (node: unknown, pathAllowed: boolean): void => {
     const text = textOf(node, source);
     if (text === null || text.name.includes('%') || (pathAllowed && (text.name.startsWith('/') || ABSOLUTE_URL.test(text.name)))) {
@@ -147,11 +201,26 @@ export function findSecurityReferences(source: string, env: string): SecurityRef
   };
 
   for (const security of securityBlocks(parseDocument(source), env)) {
+    for (const pair of mapEntries(security.get('role_hierarchy', true))) {
+      const key = textOf(pair.key, source);
+      if (key !== null && key.name !== '') {
+        references.roles.push({ ...key, declaration: true, attributes: false });
+      }
+      addRoles(pair.value, false);
+    }
+
     for (const pair of mapEntries(security.get('providers', true))) {
       if (!isMap(pair.value)) {
         continue;
       }
       addService(pair.value.get('id', true), false);
+      const memory = pair.value.get('memory', true);
+      const users = isMap(memory) ? memory.get('users', true) : null;
+      for (const user of mapEntries(users)) {
+        if (isMap(user.value)) {
+          addRoles(user.value.get('roles', true), false);
+        }
+      }
       const chain = pair.value.get('chain', true);
       const chained = isMap(chain) ? chain.get('providers', true) : null;
       if (isSeq(chained)) {
@@ -209,6 +278,13 @@ export function findSecurityReferences(source: string, env: string): SecurityRef
           if (routeOnly !== undefined) {
             addRoute(blockOptions.get(routeOnly, true), false);
           }
+          if (blockName === 'switch_user') {
+            // A single attribute checked with isGranted() (SwitchUserListener), not split.
+            const role = textOf(blockOptions.get('role', true), source);
+            if (role !== null) {
+              references.roles.push({ ...role, declaration: false, attributes: true });
+            }
+          }
         }
       }
     }
@@ -219,6 +295,7 @@ export function findSecurityReferences(source: string, env: string): SecurityRef
         if (isMap(rule)) {
           // RequestMatcher on the `_route` attribute (SecurityExtension::createAuthorization()).
           addRoute(rule.get('route', true), false);
+          addRoles(rule.get('roles', true), true);
         }
       }
     }
@@ -303,6 +380,12 @@ function splitList(text: NameReference): NameReference[] {
     offset += segment.length + 1;
   }
   return items;
+}
+
+/** String values of a sequence, or of a string split on commas; empty items dropped. */
+function listValues(node: unknown): string[] {
+  const values = isSeq(node) ? node.items.map(scalarString) : (scalarString(node)?.split(',') ?? []);
+  return values.flatMap((value) => (value === null || value.trim() === '' ? [] : [value.trim()]));
 }
 
 function scalarString(node: unknown): string | null {

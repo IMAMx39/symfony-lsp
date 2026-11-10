@@ -1,7 +1,14 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { serviceFileKind } from '../index/ServiceIndex';
-import { hasImports, parseSecurityProviders, providerKey, type ProviderDeclaration } from '../security/securityYaml';
+import {
+  hasImports,
+  parseSecurityDeclarations,
+  providerKey,
+  type ProviderDeclaration,
+  type RoleDeclaration,
+  type SecurityDeclarations,
+} from '../security/securityYaml';
 import { pathKey } from '../util/paths';
 
 /** Environment whose configuration is reproduced. */
@@ -9,7 +16,7 @@ export const SECURITY_ENV = 'dev';
 
 interface SecurityFile {
   file: string;
-  providers: ProviderDeclaration[];
+  declarations: SecurityDeclarations;
   hasImports: boolean;
 }
 
@@ -38,7 +45,50 @@ export class SecurityConfig {
 
   /** Every declared user provider, in loading order (a later declaration of a name merges into the first). */
   providers(): ProviderDeclaration[] {
-    return configFiles(this.projectRoot).flatMap((file) => this.files.get(pathKey(file))?.providers ?? []);
+    return this.declarations().flatMap((declarations) => declarations.providers);
+  }
+
+  /**
+   * Effective `role_hierarchy`: the last declaration of a role replaces the previous ones
+   * (`performNoDeepMerging()` in MainConfiguration).
+   */
+  roleHierarchy(): Map<string, RoleDeclaration> {
+    const hierarchy = new Map<string, RoleDeclaration>();
+    this.declarations().forEach((declarations) => declarations.roleHierarchy.forEach((entry) => hierarchy.set(entry.role, entry)));
+    return hierarchy;
+  }
+
+  /** Every role name of the configuration (hierarchy, access_control, memory users, switch_user), sorted. */
+  roles(): string[] {
+    return [...new Set(this.declarations().flatMap((declarations) => declarations.roles))].sort();
+  }
+
+  /** Roles a user with `role` also has, through the hierarchy (RoleHierarchy::buildRoleMap()), itself excluded. */
+  reachableRoles(role: string, hierarchy = this.roleHierarchy()): string[] {
+    const reached = new Set<string>();
+    const pending = [...(hierarchy.get(role)?.includes ?? [])];
+    while (pending.length > 0) {
+      const next = pending.shift()!;
+      if (next === role || reached.has(next)) {
+        continue;
+      }
+      reached.add(next);
+      pending.push(...(hierarchy.get(next)?.includes ?? []));
+    }
+    return [...reached];
+  }
+
+  /** Roles of the hierarchy that include `role`, directly or not. */
+  rolesIncluding(role: string): string[] {
+    const hierarchy = this.roleHierarchy();
+    return [...hierarchy.keys()].filter((candidate) => candidate !== role && this.reachableRoles(candidate, hierarchy).includes(role));
+  }
+
+  private declarations(): SecurityDeclarations[] {
+    return configFiles(this.projectRoot).flatMap((file) => {
+      const parsed = this.files.get(pathKey(file));
+      return parsed ? [parsed.declarations] : [];
+    });
   }
 
   /** First declaration of a provider, names compared leniently (providerKey). */
@@ -80,11 +130,11 @@ export class SecurityConfig {
       this.files.delete(key);
       return true;
     }
-    const providers = parseSecurityProviders(source, file, SECURITY_ENV);
-    if (providers === null) {
+    const declarations = parseSecurityDeclarations(source, file, SECURITY_ENV);
+    if (declarations === null) {
       this.invalid.add(key);
     } else {
-      this.files.set(key, { file, providers, hasImports: hasImports(source, SECURITY_ENV) });
+      this.files.set(key, { file, declarations, hasImports: hasImports(source, SECURITY_ENV) });
     }
     return true;
   }

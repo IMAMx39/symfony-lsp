@@ -3,12 +3,13 @@ import type { TextDocument } from 'vscode-languageserver-textdocument';
 import type { DoctrineEntities, OpenText } from '../../doctrine/DoctrineEntities';
 import type { ServiceIndex } from '../../index/ServiceIndex';
 import type { SecurityConfig } from '../../project/SecurityConfig';
-import type { NameReference, SecurityReferences } from '../../security/securityYaml';
+import type { NameReference, RoleReference, SecurityReferences } from '../../security/securityYaml';
 import { provideClassDefinition, provideServiceDefinition } from '../services/definition';
 
 /**
  * In a `security:` block: declaration of the referenced user provider, mapped field of an entity
- * provider's `property`, service (YAML declaration, else its class), or class through PSR-4.
+ * provider's `property`, role of `role_hierarchy`, service (YAML declaration, else its class), or
+ * class through PSR-4.
  */
 export function provideSecurityDefinition(
   document: TextDocument,
@@ -29,10 +30,28 @@ export function provideSecurityDefinition(
     const field = doctrine.fields(property.entityClass, openText)?.find((candidate) => candidate.name === property.name);
     return field?.location ?? null;
   }
+  const role = referenceAt(references.roles, offset);
+  if (role) {
+    return provideRoleDefinition(document, position, [role], config);
+  }
   return (
     provideServiceDefinition(document, position, references.services, services) ??
     provideClassDefinition(document, position, references.classes, services)
   );
+}
+
+/** Effective `role_hierarchy` declaration of the role (the last one); none for a hierarchy key itself. */
+export function provideRoleDefinition(
+  document: TextDocument,
+  position: Position,
+  references: readonly RoleReference[],
+  config: SecurityConfig,
+): Location | null {
+  const reference = referenceAt(references, document.offsetAt(position));
+  if (!reference || reference.declaration || reference.name === '') {
+    return null;
+  }
+  return config.roleHierarchy().get(reference.name)?.location ?? null;
 }
 
 function referenceAt<T extends NameReference>(references: readonly T[], offset: number): T | undefined {
